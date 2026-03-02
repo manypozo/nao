@@ -22,7 +22,12 @@ export function hasEnvApiKey(provider: LlmProvider): boolean {
 
 /** Get all providers that have API keys configured via environment */
 export function getEnvProviders(): LlmProvider[] {
-	return (Object.keys(LLM_PROVIDERS) as LlmProvider[]).filter(hasEnvApiKey);
+	return (Object.keys(LLM_PROVIDERS) as LlmProvider[]).filter((provider) => {
+		if (provider === 'ollama') {
+			return !!getEnvBaseUrl(provider);
+		}
+		return hasEnvApiKey(provider);
+	});
 }
 
 /** Get base URLs set via environment, keyed by provider */
@@ -87,6 +92,15 @@ export async function resolveProviderModel(
 		return createProviderModel(
 			provider,
 			{ apiKey: envApiKey, ...(envBaseUrl && { baseURL: envBaseUrl }) },
+			modelId,
+		);
+	}
+
+	if (provider === 'ollama') {
+		const envBaseUrl = getEnvBaseUrl(provider);
+		return createProviderModel(
+			provider,
+			{ apiKey: '', ...(envBaseUrl && { baseURL: envBaseUrl }) },
 			modelId,
 		);
 	}
