@@ -98,11 +98,7 @@ export async function resolveProviderModel(
 
 	if (provider === 'ollama') {
 		const envBaseUrl = getEnvBaseUrl(provider);
-		return createProviderModel(
-			provider,
-			{ apiKey: '', ...(envBaseUrl && { baseURL: envBaseUrl }) },
-			modelId,
-		);
+		return createProviderModel(provider, { apiKey: '', ...(envBaseUrl && { baseURL: envBaseUrl }) }, modelId);
 	}
 
 	return null;
