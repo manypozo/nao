@@ -35,6 +35,7 @@ class DatabaseAccessor(str, Enum):
     COLUMNS = "columns"
     DESCRIPTION = "description"
     PREVIEW = "preview"
+    PROFILING = "profiling"
 
 
 class DatabaseConfig(BaseModel, ABC):
@@ -78,8 +79,9 @@ class DatabaseConfig(BaseModel, ABC):
             if hasattr(cursor, "to_dataframe"):
                 return cursor.to_dataframe()
 
-            columns: list[str] = [desc[0] for desc in cursor.description]
-            return pd.DataFrame(cursor.fetchall(), columns=columns)  # type: ignore[arg-type]
+            columns = pd.Index([desc[0] for desc in cursor.description])
+            rows = [tuple(row) for row in cursor.fetchall()]  # type: ignore[arg-type]
+            return pd.DataFrame(rows, columns=columns)
         finally:
             conn.disconnect()
 
