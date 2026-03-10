@@ -67,8 +67,8 @@ export function TeamsConfigSection({ isAdmin }: TeamsConfigSectionProps) {
 		async (value: string) => {
 			const model = availableModels?.find((m) => `${m.provider}:${m.modelId}` === value);
 			if (model) {
-				setSelectedModel(model);
 				await updateTeamsModel.mutateAsync({ modelProvider: model.provider, modelId: model.modelId });
+				setSelectedModel(model);
 				queryClient.invalidateQueries(trpc.project.getTeamsConfig.queryOptions());
 			}
 		},

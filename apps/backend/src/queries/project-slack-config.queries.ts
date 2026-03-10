@@ -75,21 +75,23 @@ export const updateProjectSlackModel = async (
 	modelProvider: LlmProvider | null,
 	modelId: string | null,
 ): Promise<void> => {
-	const [project] = await db.select().from(s.project).where(eq(s.project.id, projectId)).execute();
-	const existing = project?.slackSettings;
+	await db.transaction(async (tx) => {
+		const [project] = await tx.select().from(s.project).where(eq(s.project.id, projectId)).execute();
+		const existing = project?.slackSettings;
 
-	await db
-		.update(s.project)
-		.set({
-			slackSettings: {
-				slackBotToken: existing?.slackBotToken ?? '',
-				slackSigningSecret: existing?.slackSigningSecret ?? '',
-				slackllmProvider: modelProvider ?? '',
-				slackllmModelId: modelId ?? '',
-			},
-		})
-		.where(eq(s.project.id, projectId))
-		.execute();
+		await tx
+			.update(s.project)
+			.set({
+				slackSettings: {
+					slackBotToken: existing?.slackBotToken ?? '',
+					slackSigningSecret: existing?.slackSigningSecret ?? '',
+					slackllmProvider: modelProvider ?? '',
+					slackllmModelId: modelId ?? '',
+				},
+			})
+			.where(eq(s.project.id, projectId))
+			.execute();
+	});
 };
 
 export const deleteProjectSlackConfig = async (projectId: string): Promise<void> => {

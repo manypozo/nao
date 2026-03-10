@@ -67,6 +67,10 @@ export const upsertProjectTeamsConfig = async (data: {
 		.returning()
 		.execute();
 
+	if (!updated) {
+		throw new Error(`Project not found: ${data.projectId}`);
+	}
+
 	const settings = updated.teamsSettings;
 	return {
 		appId: settings?.teamsAppId || '',
@@ -81,22 +85,24 @@ export const updateProjectTeamsModel = async (
 	modelProvider: LlmProvider | null,
 	modelId: string | null,
 ): Promise<void> => {
-	const [project] = await db.select().from(s.project).where(eq(s.project.id, projectId)).execute();
-	const existing = project?.teamsSettings;
+	await db.transaction(async (tx) => {
+		const [project] = await tx.select().from(s.project).where(eq(s.project.id, projectId)).execute();
+		const existing = project?.teamsSettings;
 
-	await db
-		.update(s.project)
-		.set({
-			teamsSettings: {
-				teamsAppId: existing?.teamsAppId ?? '',
-				teamsAppPassword: existing?.teamsAppPassword ?? '',
-				teamsTenantId: existing?.teamsTenantId ?? '',
-				teamsLlmProvider: modelProvider ?? '',
-				teamsLlmModelId: modelId ?? '',
-			},
-		})
-		.where(eq(s.project.id, projectId))
-		.execute();
+		await tx
+			.update(s.project)
+			.set({
+				teamsSettings: {
+					teamsAppId: existing?.teamsAppId ?? '',
+					teamsAppPassword: existing?.teamsAppPassword ?? '',
+					teamsTenantId: existing?.teamsTenantId ?? '',
+					teamsLlmProvider: modelProvider ?? '',
+					teamsLlmModelId: modelId ?? '',
+				},
+			})
+			.where(eq(s.project.id, projectId))
+			.execute();
+	});
 };
 
 export const deleteProjectTeamsConfig = async (projectId: string): Promise<void> => {
@@ -109,6 +115,7 @@ export interface TeamsConfig {
 	appPassword: string;
 	tenantId?: string;
 	redirectUrl: string;
+	modelSelection?: ModelSelection;
 }
 
 /**
@@ -143,5 +150,6 @@ export async function getTeamsConfig(): Promise<TeamsConfig | null> {
 		appPassword,
 		tenantId,
 		redirectUrl,
+		modelSelection: toModelSelection(settings?.teamsLlmProvider, settings?.teamsLlmModelId),
 	};
 }

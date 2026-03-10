@@ -25,7 +25,7 @@ import {
 	createTextBlock,
 	EXCLUDED_TOOLS,
 } from '../utils/messaging-provider';
-import { agentService } from './agent';
+import { agentService, ModelSelection } from './agent';
 
 const UPDATE_INTERVAL_MS = 200;
 
@@ -36,27 +36,36 @@ class TeamsService {
 	private _appId: string = '';
 	private _appPassword: string = '';
 	private _tenantId: string = '';
-	private _initialized: boolean = false;
+	private _modelSelection: ModelSelection | undefined = undefined;
 	private _lastCompletionCard: Map<string, { card: SentMessage; chatUrl: string }> = new Map();
 
 	constructor() {}
 
 	public getWebhooks(config: TeamsConfig) {
-		this._initialize(config);
+		if (this._configChanged(config)) {
+			this._initialize(config);
+		}
 		return this._bot?.webhooks;
 	}
 
-	private _initialize(config: TeamsConfig): void {
-		if (this._initialized) {
-			return;
-		}
-		this._initialized = true;
+	private _configChanged(config: TeamsConfig): boolean {
+		return (
+			this._appId !== config.appId ||
+			this._appPassword !== config.appPassword ||
+			this._tenantId !== (config.tenantId ?? '') ||
+			this._projectId !== config.projectId ||
+			this._redirectUrl !== config.redirectUrl ||
+			this._modelSelection !== config.modelSelection
+		);
+	}
 
+	private _initialize(config: TeamsConfig): void {
 		this._projectId = config.projectId;
 		this._redirectUrl = config.redirectUrl;
 		this._appId = config.appId;
 		this._appPassword = config.appPassword;
 		this._tenantId = config.tenantId ?? '';
+		this._modelSelection = config.modelSelection;
 
 		this._bot = new Chat({
 			userName: 'nao',
@@ -225,7 +234,10 @@ class TeamsService {
 	}
 
 	private async _handleStreamAgent(chat: UIChat, ctx: ConversationContext): Promise<void> {
-		const agent = await agentService.create({ ...chat, userId: ctx.user!.id, projectId: this._projectId });
+		const agent = await agentService.create(
+			{ ...chat, userId: ctx.user!.id, projectId: this._projectId },
+			this._modelSelection,
+		);
 		const stream = agent.stream(chat.messages, { provider: 'teams' });
 		const stopCard = await ctx.thread.post(createStopButtonCard());
 

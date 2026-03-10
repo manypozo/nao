@@ -33,32 +33,6 @@ export const createSummaryToolCalls = (toolGroup: Map<string, ToolCallEntry>): C
 	return CardText(`Explored ${parts.join(', ')}`);
 };
 
-export const createStopButtonCard = (): CardElement =>
-	Card({
-		children: [Actions([Button({ id: 'stop_generation', label: 'Stop Generation', style: 'primary' })])],
-	});
-
-export const createCompletionCard = (chatUrl: string, vote?: 'up' | 'down'): CardElement =>
-	Card({
-		children: [
-			Actions([
-				LinkButton({ url: chatUrl, label: 'Open in nao' }),
-				Button({ id: 'feedback_positive', label: '👍', style: vote === 'up' ? 'primary' : 'default' }),
-				Button({ id: 'feedback_negative', label: '👎', style: vote === 'down' ? 'primary' : 'default' }),
-			]),
-		],
-	});
-
-export const createTextBlock = (text: string): CardChild => CardText(text);
-
-export const createImageBlock = (url: string): CardChild => Image({ url, alt: 'image' });
-
-export const escapeCsvCell = (value: unknown): string => {
-	const str = value === null || value === undefined ? '' : String(value);
-	const sanitized = /^[=+\-@]/.test(str.trimStart()) ? `'${str}` : str;
-	return /[,"\n]/.test(sanitized) ? `"${sanitized.replace(/"/g, '""')}"` : sanitized;
-};
-
 export const FEEDBACK_MODAL_CALLBACK_ID = 'feedback_negative_modal';
 
 export const createFeedbackModal = (): ModalElement => ({
@@ -77,3 +51,51 @@ export const createFeedbackModal = (): ModalElement => ({
 		},
 	],
 });
+
+export const createStopButtonCard = (): CardElement =>
+	Card({
+		children: [Actions([Button({ id: 'stop_generation', label: 'Stop Generation', style: 'primary' })])],
+	});
+
+export const createCompletionCard = (chatUrl: string, vote?: 'up' | 'down'): CardElement =>
+	Card({
+		children: [
+			Actions([
+				LinkButton({ url: chatUrl, label: 'Open in nao' }),
+				Button({ id: 'feedback_positive', label: '👍', style: vote === 'up' ? 'primary' : 'default' }),
+				Button({ id: 'feedback_negative', label: '👎', style: vote === 'down' ? 'primary' : 'default' }),
+			]),
+		],
+	});
+
+export const createTextBlock = (text: string): CardChild => {
+	return CardText(mdToMrkdwn(text));
+};
+
+function mdToMrkdwn(text: string): string {
+	// Split on fenced and inline code spans so we never mutate literal content
+	const parts = text.split(/(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]+`)/);
+	return parts
+		.map((part, i) => {
+			if (i % 2 === 1) {
+				return part;
+			}
+			return part
+				.replace(/^#{1,6}\s+(.+)$/gm, '*$1*')
+				.replace(/\*\*(.+?)\*\*/g, '*$1*')
+				.replace(/\*\*\s*\*\*/g, '')
+				.replace(/^\*\*$/gm, '')
+				.replace(/\*\*(?!\S)/g, '');
+		})
+		.join('');
+}
+
+export const createImageBlock = (url: string): CardChild => {
+	return Image({ url, alt: 'image' });
+};
+
+export const escapeCsvCell = (value: unknown): string => {
+	const str = value === null || value === undefined ? '' : String(value);
+	const sanitized = /^[=+\-@]/.test(str.trimStart()) ? `'${str}` : str;
+	return /[,"\n]/.test(sanitized) ? `"${sanitized.replace(/"/g, '""')}"` : sanitized;
+};

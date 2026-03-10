@@ -68,6 +68,11 @@ export async function downloadTeamsManifestZip(appId: string, redirectUrl: strin
 	zip.file('manifest.json', JSON.stringify(buildTeamsManifest(appId, redirectUrl), null, 2));
 
 	const [outlineRes, colorRes] = await Promise.all([fetch('/outline.png'), fetch('/color.png')]);
+
+	if (!outlineRes.ok || !colorRes.ok) {
+		throw new Error('Failed to fetch app icon assets for the Teams manifest package.');
+	}
+
 	zip.file('outline.png', await outlineRes.arrayBuffer());
 	zip.file('color.png', await colorRes.arrayBuffer());
 
