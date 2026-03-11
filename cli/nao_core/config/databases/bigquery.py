@@ -130,7 +130,7 @@ class BigQueryDatabaseContext(DatabaseContext):
             query = f"""
                 SELECT SUM(total_rows)
                 FROM `{self._project_id}.{self._schema}.INFORMATION_SCHEMA.PARTITIONS`
-                WHERE table_name = '{self._table_name}' AND partition_id != '__NULL__'
+                WHERE table_name = '{self._table_name}'
             """
             row = next(iter(self._conn.raw_sql(query)), None)  # type: ignore[union-attr]
             if row is not None and row[0] is not None:
@@ -163,12 +163,7 @@ class BigQueryDatabaseContext(DatabaseContext):
 
         if is_time_based:
             if meta.last_partition_id:
-                # last_partition_id is YYYYMMDD — convert to YYYY-MM-DD
-                pid = meta.last_partition_id
-                date_str = f"{pid[:4]}-{pid[4:6]}-{pid[6:8]}"
-                if "DATE" in col_type and "TIMESTAMP" not in col_type and "DATETIME" not in col_type:
-                    return f"`{col}` = DATE('{date_str}')"
-                return f"DATE(`{col}`) = DATE('{date_str}')"
+                return _time_based_partition_filter(col, col_type, meta.last_partition_id)
             # No partition data yet (streaming) — fall back to today's partition
             if "DATE" in col_type and "TIMESTAMP" not in col_type and "DATETIME" not in col_type:
                 return f"`{col}` = CURRENT_DATE()"
@@ -247,6 +242,27 @@ class BigQueryDatabaseContext(DatabaseContext):
             WHERE table_name = '{self._table_name}' AND description IS NOT NULL AND description != ''
         """
         return {row[0]: str(row[1]) for row in self._conn.raw_sql(query) if row[1]}  # type: ignore[union-attr]
+
+
+def _time_based_partition_filter(col: str, col_type: str, partition_id: str) -> str:
+    """Build a partition filter for time-based columns, handling all BigQuery granularities."""
+    length = len(partition_id)
+    is_date_only = "DATE" in col_type and "TIMESTAMP" not in col_type and "DATETIME" not in col_type
+
+    if length >= 8:  # YYYYMMDD or YYYYMMDDHH
+        date_str = f"{partition_id[:4]}-{partition_id[4:6]}-{partition_id[6:8]}"
+        if is_date_only:
+            return f"`{col}` = DATE('{date_str}')"
+        return f"DATE(`{col}`) = DATE('{date_str}')"
+
+    if length == 6:  # YYYYMM — monthly
+        date_str = f"{partition_id[:4]}-{partition_id[4:6]}-01"
+        if is_date_only:
+            return f"DATE_TRUNC(`{col}`, MONTH) = DATE('{date_str}')"
+        return f"DATE_TRUNC(DATE(`{col}`), MONTH) = DATE('{date_str}')"
+
+    # YYYY — yearly
+    return f"EXTRACT(YEAR FROM `{col}`) = {partition_id}"
 
 
 def _is_partition_filter_error(exc: Exception) -> bool:

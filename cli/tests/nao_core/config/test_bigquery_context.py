@@ -281,6 +281,7 @@ class TestRowCount:
         assert "INFORMATION_SCHEMA.PARTITIONS" in sql
         assert "my_dataset" in sql
         assert "events" in sql
+        assert "__NULL__" not in sql
         ctx.table.count.assert_not_called()
 
     def test_partitioned_table_sum_query_returns_zero_on_streaming(self):
@@ -580,6 +581,26 @@ class TestBuildPartitionFilter:
         )
         ctx, _ = _make_context(partition_metadata=meta)
         assert ctx._build_partition_filter(meta) == "`month_key` = 2000"
+
+    def test_date_with_monthly_partition_id(self):
+        ctx, meta = self._ctx_and_meta("DATE", "202603")
+        assert ctx._build_partition_filter(meta) == "DATE_TRUNC(`event_date`, MONTH) = DATE('2026-03-01')"
+
+    def test_date_with_yearly_partition_id(self):
+        ctx, meta = self._ctx_and_meta("DATE", "2026")
+        assert ctx._build_partition_filter(meta) == "EXTRACT(YEAR FROM `event_date`) = 2026"
+
+    def test_date_with_hourly_partition_id(self):
+        ctx, meta = self._ctx_and_meta("DATE", "2026031014")
+        assert ctx._build_partition_filter(meta) == "`event_date` = DATE('2026-03-10')"
+
+    def test_timestamp_with_monthly_partition_id(self):
+        ctx, meta = self._ctx_and_meta("TIMESTAMP", "202603")
+        assert ctx._build_partition_filter(meta) == "DATE_TRUNC(DATE(`event_date`), MONTH) = DATE('2026-03-01')"
+
+    def test_timestamp_with_yearly_partition_id(self):
+        ctx, meta = self._ctx_and_meta("TIMESTAMP", "2026")
+        assert ctx._build_partition_filter(meta) == "EXTRACT(YEAR FROM `event_date`) = 2026"
 
 
 class TestFetchSchemaPartitionMetadata:
