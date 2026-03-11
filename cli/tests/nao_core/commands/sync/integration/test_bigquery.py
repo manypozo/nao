@@ -151,3 +151,55 @@ def spec(db_config, temp_datasets):
 
 class TestBigQuerySyncIntegration(BaseSyncIntegrationTests):
     """Verify the sync pipeline produces correct output against a live BigQuery project."""
+
+
+class TestBigQueryPartitionFilter:
+    """Verify preview and row_count work on tables that require a partition filter."""
+
+    def test_preview_returns_rows_on_partition_required_table(self, db_config, temp_datasets):
+        conn = db_config.connect()
+        try:
+            ctx = db_config.create_context(conn, temp_datasets["public"], "events")
+            rows = ctx.preview()
+            assert len(rows) == 2
+            assert all(r["event_date"] == "2026-01-15" for r in rows)
+        finally:
+            conn.disconnect()
+
+    def test_row_count_returns_total_on_partition_required_table(self, db_config, temp_datasets):
+        conn = db_config.connect()
+        try:
+            ctx = db_config.create_context(conn, temp_datasets["public"], "events")
+            assert ctx.row_count() == 2
+        finally:
+            conn.disconnect()
+
+    def test_custom_partition_filter_overrides_auto_detection(self, db_config, temp_datasets):
+        config = db_config.model_copy(update={"partition_filters": {"events": "event_date = DATE('2026-01-15')"}})
+        conn = config.connect()
+        try:
+            ctx = config.create_context(conn, temp_datasets["public"], "events")
+            rows = ctx.preview()
+            assert len(rows) == 2
+        finally:
+            conn.disconnect()
+
+    def test_is_partitioned_and_requires_filter_flags_are_set(self, db_config, temp_datasets):
+        conn = db_config.connect()
+        try:
+            ctx = db_config.create_context(conn, temp_datasets["public"], "events")
+            assert ctx.is_partitioned() is True
+            assert ctx.requires_partition_filter() is True
+            assert ctx.active_partition_filter() is not None
+        finally:
+            conn.disconnect()
+
+    def test_non_partitioned_table_flags_are_false(self, db_config, temp_datasets):
+        conn = db_config.connect()
+        try:
+            ctx = db_config.create_context(conn, temp_datasets["public"], "users")
+            assert ctx.is_partitioned() is False
+            assert ctx.requires_partition_filter() is False
+            assert ctx.active_partition_filter() is None
+        finally:
+            conn.disconnect()

@@ -72,6 +72,18 @@ class DatabaseContext:
         """Return partition/clustering column names if available."""
         return []
 
+    def is_partitioned(self) -> bool:
+        """Return True if this table has a partition column."""
+        return False
+
+    def requires_partition_filter(self) -> bool:
+        """Return True if queries to this table require a partition filter."""
+        return False
+
+    def active_partition_filter(self) -> str | None:
+        """Return the partition filter expression for this table, if any."""
+        return None
+
     def description(self) -> str | None:
         """Return the table description if available."""
         return None
