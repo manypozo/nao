@@ -130,11 +130,12 @@ if (staticRoot) {
 	app.register(fastifyStatic, {
 		root: staticRoot,
 		prefix: '/',
+		wildcard: false,
 	});
 
 	// SPA fallback: serve index.html for all non-API routes
 	app.setNotFoundHandler((request, reply) => {
-		if (request.url.startsWith('/api')) {
+		if (request.url.startsWith('/api') || request.url.startsWith('/c')) {
 			reply.status(404).send({ error: 'Not found' });
 		} else {
 			reply.sendFile('index.html');
