@@ -18,12 +18,13 @@ export const listUserChats = async (userId: string): Promise<ListChatResponse> =
 		.select()
 		.from(s.chat)
 		.where(eq(s.chat.userId, userId))
-		.orderBy(desc(s.chat.createdAt))
+		.orderBy(desc(s.chat.updatedAt))
 		.execute();
 	return {
 		chats: chats.map((chat) => ({
 			id: chat.id,
 			title: chat.title,
+			isStarred: chat.isStarred,
 			createdAt: chat.createdAt.getTime(),
 			updatedAt: chat.updatedAt.getTime(),
 		})),
@@ -62,6 +63,7 @@ export const loadChat = async (
 		{
 			id: chatId,
 			title: chat.title,
+			isStarred: chat.isStarred,
 			createdAt: chat.createdAt.getTime(),
 			updatedAt: chat.updatedAt.getTime(),
 			messages,
@@ -159,7 +161,7 @@ export const createChat = async (
 	newChat: NewChat,
 	newUserMessage: {
 		text: string;
-		source?: 'slack' | 'web';
+		source?: 'slack' | 'teams' | 'web';
 	},
 ): Promise<[DBChat, DBChatMessage]> => {
 	return db.transaction(async (t): Promise<[DBChat, DBChatMessage]> => {
@@ -217,6 +219,8 @@ export const upsertMessage = async (
 			await t.insert(s.messagePart).values(dbParts).execute();
 		}
 
+		await t.update(s.chat).set({ updatedAt: new Date() }).where(eq(s.chat.id, message.chatId)).execute();
+
 		return { messageId };
 	});
 };
@@ -228,6 +232,10 @@ export const deleteChat = async (chatId: string): Promise<{ projectId: string }>
 		.returning({ projectId: s.chat.projectId })
 		.execute();
 	return result;
+};
+
+export const toggleStarred = async (chatId: string, isStarred: boolean): Promise<void> => {
+	await db.update(s.chat).set({ isStarred }).where(eq(s.chat.id, chatId)).execute();
 };
 
 export const renameChat = async (chatId: string, title: string): Promise<{ projectId: string }> => {
@@ -275,6 +283,16 @@ export const getChatBySlackThread = async (threadId: string): Promise<{ id: stri
 		.select({ id: s.chat.id, title: s.chat.title })
 		.from(s.chat)
 		.where(eq(s.chat.slackThreadId, threadId))
+		.limit(1)
+		.execute();
+	return result.at(0) || null;
+};
+
+export const getChatByTeamsThread = async (threadId: string): Promise<{ id: string; title: string } | null> => {
+	const result = await db
+		.select({ id: s.chat.id, title: s.chat.title })
+		.from(s.chat)
+		.where(eq(s.chat.teamsThreadId, threadId))
 		.limit(1)
 		.execute();
 	return result.at(0) || null;

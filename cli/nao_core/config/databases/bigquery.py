@@ -30,6 +30,29 @@ class TablePartitionMetadata:
     require_partition_filter: bool = False
 
 
+def _bq_escape_quoted_identifier(name: object) -> str:
+    value = str(name)
+    value = value.replace("\\", "\\\\")
+    value = value.replace("`", "\\`")
+    return value
+
+
+def _bq_ident(name: object) -> str:
+    return f"`{_bq_escape_quoted_identifier(name)}`"
+
+
+def _bq_path(*parts: object) -> str:
+    escaped = ".".join(_bq_escape_quoted_identifier(p) for p in parts)
+    return f"`{escaped}`"
+
+
+def _bq_string_literal(value: object) -> str:
+    text = str(value)
+    text = text.replace("\\", "\\\\")
+    text = text.replace("'", "\\'")
+    return f"'{text}'"
+
+
 class BigQueryDatabaseContext(DatabaseContext):
     """BigQuery context with partition, clustering, and description discovery."""
 
@@ -58,10 +81,12 @@ class BigQueryDatabaseContext(DatabaseContext):
 
     def description(self) -> str | None:
         try:
+            table_name_literal = _bq_string_literal(self._table_name)
+            table_options_path = _bq_path(self._project_id, self._schema, "INFORMATION_SCHEMA", "TABLE_OPTIONS")
             query = f"""
                 SELECT option_value
-                FROM `{self._project_id}.{self._schema}.INFORMATION_SCHEMA.TABLE_OPTIONS`
-                WHERE table_name = '{self._table_name}' AND option_name = 'description'
+                FROM {table_options_path}
+                WHERE table_name = {table_name_literal} AND option_name = 'description'
             """
             for row in self._conn.raw_sql(query):  # type: ignore[union-attr]
                 if row[0]:
@@ -236,12 +261,26 @@ class BigQueryDatabaseContext(DatabaseContext):
             return None
 
     def _fetch_column_descriptions(self) -> dict[str, str]:
+        table_name_literal = _bq_string_literal(self._table_name)
+        column_paths = _bq_path(self._project_id, self._schema, "INFORMATION_SCHEMA", "COLUMN_FIELD_PATHS")
         query = f"""
             SELECT column_name, description
-            FROM `{self._project_id}.{self._schema}.INFORMATION_SCHEMA.COLUMN_FIELD_PATHS`
-            WHERE table_name = '{self._table_name}' AND description IS NOT NULL AND description != ''
+            FROM {column_paths}
+            WHERE table_name = {table_name_literal} AND description IS NOT NULL AND description != ''
         """
         return {row[0]: str(row[1]) for row in self._conn.raw_sql(query) if row[1]}  # type: ignore[union-attr]
+
+    def _quote(self, name: str) -> str:
+        return f"`{name}`"
+
+    def _cast_float(self, expr: str) -> str:
+        return f"CAST({expr} AS FLOAT64)"
+
+    def _partition_filter(self) -> str:
+        cols = self.partition_columns()
+        if cols:
+            return f"`{cols[0]}` >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)"
+        return ""
 
 
 def _time_based_partition_filter(col: str, col_type: str, partition_id: str) -> str:
@@ -277,15 +316,17 @@ def _coerce(val: Any) -> Any:
 
 
 def _get_bq_partition_columns(conn: BaseBackend, schema: str, table: str) -> list[str]:
+    schema_info_path = _bq_path(schema, "INFORMATION_SCHEMA", "COLUMNS")
+    table_name_literal = _bq_string_literal(table)
     partition_query = f"""
         SELECT column_name
-        FROM `{schema}.INFORMATION_SCHEMA.COLUMNS`
-        WHERE table_name = '{table}' AND is_partitioning_column = 'YES'
+        FROM {schema_info_path}
+        WHERE table_name = {table_name_literal} AND is_partitioning_column = 'YES'
     """
     clustering_query = f"""
         SELECT column_name
-        FROM `{schema}.INFORMATION_SCHEMA.COLUMNS`
-        WHERE table_name = '{table}' AND clustering_ordinal_position IS NOT NULL
+        FROM {schema_info_path}
+        WHERE table_name = {table_name_literal} AND clustering_ordinal_position IS NOT NULL
         ORDER BY clustering_ordinal_position
     """
     columns: list[str] = []
@@ -375,8 +416,6 @@ class BigQueryConfig(DatabaseConfig):
         conn = self.connect()
         try:
             cursor = conn.raw_sql(sql)  # type: ignore[union-attr]
-            # Disable BigQuery Storage Read API (gRPC) — it deadlocks when an
-            # asyncio event loop is running in the same process (e.g. FastAPI).
             return cursor.to_dataframe(create_bqstorage_client=False)
         finally:
             conn.disconnect()

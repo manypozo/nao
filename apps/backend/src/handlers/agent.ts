@@ -1,6 +1,6 @@
 import * as chatQueries from '../queries/chat.queries';
 import { agentService } from '../services/agent';
-import { mcpService } from '../services/mcp.service';
+import { mcpService } from '../services/mcp';
 import { skillService } from '../services/skill';
 import { AgentRequest, AgentRequestUserMessage } from '../types/chat';
 import { createChatTitle } from '../utils/ai';
@@ -53,11 +53,13 @@ export const handleAgentRoute = async (opts: HandleAgentMessageInput): Promise<H
 
 	const stream = agent.stream(chat.messages, {
 		mentions,
+		timezone: opts.timezone,
 		events: {
 			newChat: isNewChat
 				? {
 						id: chatId,
 						title: chat.title,
+						isStarred: chat.isStarred,
 						createdAt: chat.createdAt,
 						updatedAt: chat.updatedAt,
 					}

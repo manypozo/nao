@@ -2,18 +2,26 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod/v4';
 
 import { getProviderAuth, KNOWN_MODELS } from '../agents/providers';
+import { getDatabaseObjects } from '../agents/user-rules';
 import { env } from '../env';
+import * as chatQueries from '../queries/chat.queries';
 import * as projectQueries from '../queries/project.queries';
 import * as llmConfigQueries from '../queries/project-llm-config.queries';
 import * as savedPromptQueries from '../queries/project-saved-prompt.queries';
 import * as slackConfigQueries from '../queries/project-slack-config.queries';
+import * as teamsConfigQueries from '../queries/project-teams-config.queries';
 import { posthog, PostHogEvent } from '../services/posthog';
 import { getAvailableModels as getAvailableTranscribeModels } from '../services/transcribe.service';
 import { AgentSettings } from '../types/agent-settings';
 import { llmConfigSchema, LlmProvider, llmProviderSchema } from '../types/llm';
+import { isValidIsoDateString } from '../utils/date';
 import { getEnvApiKey, getEnvBaseUrls, getEnvProviders, getProjectAvailableModels } from '../utils/llm';
 import { buildCredentialPreviews } from '../utils/utils';
 import { adminProtectedProcedure, projectProtectedProcedure, publicProcedure } from './trpc';
+
+const isoDateString = z.string().refine(isValidIsoDateString, {
+	message: 'Must be a valid YYYY-MM-DD date',
+});
 
 export const projectRoutes = {
 	getCurrent: projectProtectedProcedure.query(({ ctx }) => {
@@ -25,6 +33,25 @@ export const projectRoutes = {
 			userRole: ctx.userRole,
 		};
 	}),
+
+	getDatabaseObjects: projectProtectedProcedure
+		.output(
+			z.array(
+				z.object({
+					type: z.string(),
+					database: z.string(),
+					schema: z.string(),
+					table: z.string(),
+					fqdn: z.string(),
+				}),
+			),
+		)
+		.query(({ ctx }) => {
+			if (!ctx.project?.path) {
+				return [];
+			}
+			return getDatabaseObjects(ctx.project.path);
+		}),
 
 	getLlmConfigs: projectProtectedProcedure
 		.output(
@@ -212,6 +239,85 @@ export const projectRoutes = {
 		return { success: true };
 	}),
 
+	getTeamsConfig: projectProtectedProcedure.query(async ({ ctx }) => {
+		if (!ctx.project) {
+			return { projectConfig: null, projectId: '' };
+		}
+
+		const config = await teamsConfigQueries.getProjectTeamsConfig(ctx.project.id);
+
+		const projectConfig = config
+			? {
+					appIdPreview: config.appId.slice(0, 4) + '...' + config.appId.slice(-4),
+					appPasswordPreview: config.appPassword.slice(0, 4) + '...' + config.appPassword.slice(-4),
+					tenantIdPreview: config.tenantId.slice(0, 4) + '...' + config.tenantId.slice(-4),
+					modelSelection: config.modelSelection,
+				}
+			: null;
+
+		const baseUrl = env.BETTER_AUTH_URL || 'http://localhost:3000';
+		return {
+			projectConfig,
+			projectId: ctx.project.id,
+			redirectUrl: baseUrl,
+			messagingEndpointUrl: `${baseUrl}/api/webhooks/teams/${ctx.project.id}`,
+		};
+	}),
+
+	upsertTeamsConfig: adminProtectedProcedure
+		.input(
+			z.object({
+				appId: z.string().min(1),
+				appPassword: z.string().min(1),
+				tenantId: z.string().min(1),
+				modelProvider: llmProviderSchema.optional(),
+				modelId: z.string().optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const config = await teamsConfigQueries.upsertProjectTeamsConfig({
+				projectId: ctx.project.id,
+				appId: input.appId,
+				appPassword: input.appPassword,
+				tenantId: input.tenantId,
+				modelProvider: input.modelProvider,
+				modelId: input.modelId,
+			});
+
+			posthog.capture(ctx.user.id, PostHogEvent.TeamsConfigured, {
+				project_id: ctx.project.id,
+				modelProvider: input.modelProvider,
+				modelId: input.modelId,
+			});
+
+			return {
+				appIdPreview: config.appId.slice(0, 4) + '...' + config.appId.slice(-4),
+				appPasswordPreview: config.appPassword.slice(0, 4) + '...' + config.appPassword.slice(-4),
+				tenantIdPreview: config.tenantId.slice(0, 4) + '...' + config.tenantId.slice(-4),
+				modelSelection: config.modelSelection,
+			};
+		}),
+
+	updateTeamsModelConfig: adminProtectedProcedure
+		.input(
+			z.object({
+				modelProvider: llmProviderSchema.optional(),
+				modelId: z.string().optional(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			await teamsConfigQueries.updateProjectTeamsModel(
+				ctx.project.id,
+				input.modelProvider ?? null,
+				input.modelId ?? null,
+			);
+		}),
+
+	deleteTeamsConfig: adminProtectedProcedure.mutation(async ({ ctx }) => {
+		await teamsConfigQueries.deleteProjectTeamsConfig(ctx.project.id);
+		return { success: true };
+	}),
+
 	getAllUsersWithRoles: projectProtectedProcedure.query(async ({ ctx }) => {
 		if (!ctx.project) {
 			return [];
@@ -366,5 +472,53 @@ export const projectRoutes = {
 	getMemorySettings: projectProtectedProcedure.query(async ({ ctx }) => {
 		const memoryEnabled = await projectQueries.getProjectMemoryEnabled(ctx.project.id);
 		return { memoryEnabled };
+	}),
+
+	getProjectChats: adminProtectedProcedure
+		.input(
+			z.object({
+				page: z.number().int().min(0).default(0),
+				pageSize: z.number().int().min(1).max(100).default(30),
+				search: z.string().trim().optional(),
+				filters: z
+					.array(
+						z.object({
+							id: z.enum(['userName', 'userRole', 'toolState']),
+							values: z.array(z.string()).default([]),
+						}),
+					)
+					.optional(),
+				updatedAtFilter: z
+					.union([
+						z.object({ mode: z.literal('single'), value: isoDateString }),
+						z.object({ mode: z.literal('range'), start: isoDateString, end: isoDateString }),
+					])
+					.optional(),
+				sorting: z
+					.array(
+						z.object({
+							id: z.string(),
+							desc: z.boolean().optional(),
+						}),
+					)
+					.optional(),
+			}),
+		)
+		.query(async ({ ctx, input }) => {
+			return projectQueries.listProjectChats(ctx.project.id, input);
+		}),
+
+	getChatReplay: adminProtectedProcedure.input(z.object({ chatId: z.string() })).query(async ({ ctx, input }) => {
+		const projectId = await chatQueries.getChatProjectId(input.chatId);
+		if (!projectId || projectId !== ctx.project.id) {
+			throw new TRPCError({ code: 'NOT_FOUND', message: `Chat with id ${input.chatId} not found.` });
+		}
+
+		const [chat] = await chatQueries.loadChat(input.chatId, { includeFeedback: true });
+		if (!chat) {
+			throw new TRPCError({ code: 'NOT_FOUND', message: `Chat with id ${input.chatId} not found.` });
+		}
+
+		return chat;
 	}),
 };
