@@ -15,6 +15,7 @@ import { db } from './db/db';
 import dbConfig, { Dialect } from './db/dbConfig';
 import { env, isCloud, MCP_SERVER_URL } from './env';
 import * as orgQueries from './queries/organization.queries';
+import * as userQueries from './queries/user.queries';
 import { emailService } from './services/email';
 import { hasFeature, LICENSE_FEATURES } from './services/license.service';
 import {
@@ -77,6 +78,7 @@ export function getOpenIdConfigMetadataHandler(): Promise<MetadataHandler> {
 
 async function createAuthInstance(googleConfig: GoogleConfig) {
 	const githubAllowlist = buildGithubAllowlist(env.GITHUB_ALLOWED_USERS);
+	const disableEmailSignUp = await shouldDisableEmailSignUp();
 
 	const socialProviders: Parameters<typeof betterAuth>[0]['socialProviders'] = {
 		google: {
@@ -147,7 +149,7 @@ async function createAuthInstance(googleConfig: GoogleConfig) {
 		trustedOrigins: env.BETTER_AUTH_URL ? [env.BETTER_AUTH_URL] : undefined,
 		emailAndPassword: {
 			enabled: env.ENABLE_USER_LOGIN === true,
-			disableSignUp: env.ENABLE_USER_SIGNUP === false,
+			disableSignUp: disableEmailSignUp,
 			sendResetPassword: async ({ user, url }) => {
 				emailService.sendEmail(user.email, buildForgotPasswordEmail(user, url));
 			},
@@ -186,6 +188,7 @@ async function createAuthInstance(googleConfig: GoogleConfig) {
 								await orgQueries.addUserToDefaultProjectIfExists(user.id);
 							}
 						}
+						await refreshAuthAfterInitialSelfHostedSignup();
 					},
 				},
 			},
@@ -197,6 +200,26 @@ async function createAuthInstance(googleConfig: GoogleConfig) {
 			},
 		},
 	});
+}
+
+async function shouldDisableEmailSignUp(): Promise<boolean> {
+	if (env.ENABLE_USER_SIGNUP) {
+		return false;
+	}
+
+	const userCount = await userQueries.countUsers();
+	return userCount > 0;
+}
+
+async function refreshAuthAfterInitialSelfHostedSignup(): Promise<void> {
+	if (env.ENABLE_USER_SIGNUP) {
+		return;
+	}
+
+	const userCount = await userQueries.countUsers();
+	if (userCount === 1) {
+		updateAuth();
+	}
 }
 
 async function getAuthServerEndpoints(): Promise<{ issuer: string; jwksUrl: string }> {
