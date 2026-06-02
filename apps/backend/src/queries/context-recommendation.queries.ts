@@ -1,7 +1,7 @@
 // ABOUTME: CRUD and dedup queries for context-recommendation runs and recommendations.
 // ABOUTME: Used by the context-recommendations process and (later) the tRPC surface.
 
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 
 import s, { DBContextRecommendation, DBContextRecommendationRun, NewContextRecommendation } from '../db/abstractSchema';
 import { db } from '../db/db';
@@ -71,5 +71,50 @@ export async function updateRecommendation(id: string, patch: Partial<NewContext
 		.update(s.contextRecommendation)
 		.set({ ...patch, lastSeenAt: new Date() })
 		.where(eq(s.contextRecommendation.id, id))
+		.execute();
+}
+
+export async function listRecommendations(
+	projectId: string,
+	status?: DBContextRecommendation['status'],
+): Promise<DBContextRecommendation[]> {
+	const where = status
+		? and(eq(s.contextRecommendation.projectId, projectId), eq(s.contextRecommendation.status, status))
+		: eq(s.contextRecommendation.projectId, projectId);
+	return db
+		.select()
+		.from(s.contextRecommendation)
+		.where(where)
+		.orderBy(desc(s.contextRecommendation.impactScore))
+		.execute();
+}
+
+export async function getLatestRun(projectId: string): Promise<DBContextRecommendationRun | null> {
+	const [run] = await db
+		.select()
+		.from(s.contextRecommendationRun)
+		.where(eq(s.contextRecommendationRun.projectId, projectId))
+		.orderBy(desc(s.contextRecommendationRun.startedAt))
+		.limit(1)
+		.execute();
+	return run ?? null;
+}
+
+export async function setRecommendationStatus(input: {
+	id: string;
+	projectId: string;
+	status: DBContextRecommendation['status'];
+	snoozedUntil?: Date | null;
+	userId: string;
+}): Promise<void> {
+	await db
+		.update(s.contextRecommendation)
+		.set({
+			status: input.status,
+			snoozedUntil: input.snoozedUntil ?? null,
+			statusChangedAt: new Date(),
+			statusChangedBy: input.userId,
+		})
+		.where(and(eq(s.contextRecommendation.id, input.id), eq(s.contextRecommendation.projectId, input.projectId)))
 		.execute();
 }

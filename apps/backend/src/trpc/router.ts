@@ -9,6 +9,7 @@ import { chatRoutes } from './chat.routes';
 import { chatForkRoutes } from './chat-fork.routes';
 import { citationRoutes } from './citation.routes';
 import { contextExplorerRoutes } from './context-explorer.routes';
+import { contextRecommendationRoutes } from './context-recommendation.routes';
 import { embedRoutes } from './embed.routes';
 import { feedbackRoutes } from './feedback.routes';
 import { githubRoutes } from './github.routes';
@@ -41,6 +42,7 @@ export const trpcRouter = router({
 	chatFork: chatForkRoutes,
 	citation: citationRoutes,
 	contextExplorer: contextExplorerRoutes,
+	contextRecommendation: contextRecommendationRoutes,
 	feedback: feedbackRoutes,
 	github: githubRoutes,
 	license: licenseRoutes,
