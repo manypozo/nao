@@ -11,6 +11,10 @@ import { fileURLToPath } from 'url';
 
 import { env, isCloud } from './env';
 import { AUTOMATION_JOB_NAME, automationHandler } from './handlers/automation.handler';
+import {
+	CONTEXT_RECOMMENDATIONS_JOB_NAME,
+	contextRecommendationsHandler,
+} from './handlers/context-recommendations.handler';
 import { LOG_CLEANUP_JOB_NAME, logCleanupHandler, runLogCleanup } from './handlers/log-cleanup.handler';
 import { MCP_QUERY_DATA_CLEANUP_JOB_NAME, mcpQueryDataCleanupHandler } from './handlers/mcp-query-data-cleanup.handler';
 import { STORY_REFRESH_JOB_NAME, storyRefreshHandler } from './handlers/story-refresh.handler';
@@ -315,6 +319,12 @@ export const startServer = async (opts: { port: number; host: string }) => {
 		name: MCP_QUERY_DATA_CLEANUP_JOB_NAME,
 		cron: '0 4 * * *',
 		uniqueKey: MCP_QUERY_DATA_CLEANUP_JOB_NAME,
+	});
+	registerJob(CONTEXT_RECOMMENDATIONS_JOB_NAME, contextRecommendationsHandler);
+	await ensureRecurring({
+		name: CONTEXT_RECOMMENDATIONS_JOB_NAME,
+		cron: '0 6 * * 1',
+		uniqueKey: CONTEXT_RECOMMENDATIONS_JOB_NAME,
 	});
 	startScheduler();
 	await startLicenseHeartbeat();
