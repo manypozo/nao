@@ -113,7 +113,7 @@ function RecommendationsPage() {
 					<div className='flex justify-center p-4'>
 						<Spinner />
 					</div>
-				) : recommendations.isError ? (
+				) : recommendations.isError && !recommendations.data ? (
 					<Empty>Failed to load recommendations: {recommendations.error?.message ?? 'unknown error'}</Empty>
 				) : !recommendations.data || recommendations.data.length === 0 ? (
 					<Empty>No recommendations yet. They appear after the next analysis run.</Empty>

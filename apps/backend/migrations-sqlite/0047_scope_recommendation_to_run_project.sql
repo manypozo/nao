@@ -25,7 +25,7 @@ CREATE TABLE `__new_context_recommendation` (
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON UPDATE no action ON DELETE cascade,
 	FOREIGN KEY (`status_changed_by`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE set null,
-	FOREIGN KEY (`run_id`,`project_id`) REFERENCES `context_recommendation_run`(`id`,`project_id`) ON UPDATE no action ON DELETE cascade
+	FOREIGN KEY (`run_id`,`project_id`) REFERENCES `context_recommendation_run`(`id`,`project_id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 INSERT INTO `__new_context_recommendation`("id", "project_id", "run_id", "fingerprint", "suggested_file", "subject_key", "status", "snoozed_until", "severity", "impact_score", "impact", "insights", "title", "summary", "suggested_action", "llm_provider", "llm_model_id", "first_seen_at", "last_seen_at", "occurrence_count", "status_changed_at", "status_changed_by", "created_at") SELECT "id", "project_id", "run_id", "fingerprint", "suggested_file", "subject_key", "status", "snoozed_until", "severity", "impact_score", "impact", "insights", "title", "summary", "suggested_action", "llm_provider", "llm_model_id", "first_seen_at", "last_seen_at", "occurrence_count", "status_changed_at", "status_changed_by", "created_at" FROM `context_recommendation`;--> statement-breakpoint

@@ -634,11 +634,13 @@ export const contextRecommendation = pgTable(
 		uniqueIndex('context_recommendation_project_fingerprint_unique').on(t.projectId, t.fingerprint),
 		index('context_recommendation_projectId_status_idx').on(t.projectId, t.status),
 		index('context_recommendation_runId_idx').on(t.runId),
+		// run_id is a soft link to the run that last touched this rec; recommendations
+		// outlive runs, so a still-referenced run cannot be deleted (no cascade).
 		foreignKey({
 			columns: [t.runId, t.projectId],
 			foreignColumns: [contextRecommendationRun.id, contextRecommendationRun.projectId],
 			name: 'context_recommendation_run_fk',
-		}).onDelete('cascade'),
+		}),
 	],
 );
 
