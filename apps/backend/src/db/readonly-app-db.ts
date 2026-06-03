@@ -1,7 +1,6 @@
 // ABOUTME: Runs validated, read-only SQL against the NAO app DB inside a per-run,
 // ABOUTME: project-scoped sandbox of temp views that exclude auth/PII columns.
 
-import Database from 'better-sqlite3';
 import postgres from 'postgres';
 
 import { env } from '../env';
@@ -56,7 +55,27 @@ export async function runScopedAppDbQuery(projectId: string, sql: string): Promi
 	return runSqlite(projectId, sql);
 }
 
-function runSqlite(projectId: string, sql: string): AppDbQueryResult {
+async function runSqlite(projectId: string, sql: string): Promise<AppDbQueryResult> {
+	// Production runs under Bun (bun:sqlite); tests run under Node (better-sqlite3).
+	// better-sqlite3's native binding does not load under Bun, so the driver is chosen by runtime.
+	if (typeof Bun !== 'undefined') {
+		const { Database } = await import('bun:sqlite');
+		const conn = new Database(dbConfig.dbUrl);
+		try {
+			conn.run('CREATE TEMP TABLE _scope (project_id TEXT NOT NULL)');
+			conn.query('INSERT INTO _scope (project_id) VALUES (?)').run(projectId);
+			for (const view of SCOPED_VIEWS) {
+				conn.run(`CREATE TEMP VIEW ${view.name} AS ${view.body}`);
+			}
+			conn.run('PRAGMA query_only = ON');
+			const rows = conn.query(sql).all() as Record<string, unknown>[];
+			return { columns: rows.length > 0 ? Object.keys(rows[0]) : [], rows };
+		} finally {
+			conn.close();
+		}
+	}
+
+	const { default: Database } = await import('better-sqlite3');
 	const conn = new Database(dbConfig.dbUrl);
 	try {
 		conn.exec('CREATE TEMP TABLE _scope (project_id TEXT NOT NULL)');
