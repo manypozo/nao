@@ -1,6 +1,3 @@
-// ABOUTME: The trigger-agnostic context-recommendations process: runs the analysis
-// ABOUTME: agent over a project's usage window and reconciles the results.
-
 import { LlmSelectedModel } from '@nao/shared/types';
 import { readUIMessageStream, UIMessage } from 'ai';
 import { and, desc, eq, gte, isNotNull, lt, sql } from 'drizzle-orm';
@@ -83,8 +80,10 @@ export async function runContextRecommendations(
 			now,
 		});
 
-		await applyActions({ projectId, runId: run.id, model: modelSelection, actions, existing });
-		await crQueries.completeRun(run.id);
+		await db.transaction(async (tx) => {
+			await applyActions({ projectId, runId: run.id, model: modelSelection, actions, existing }, tx);
+			await crQueries.completeRun(run.id, {}, tx);
+		});
 		return { runId: run.id };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
@@ -192,32 +191,38 @@ function toExistingRec(r: DBContextRecommendation): ExistingRecommendation {
 	};
 }
 
-async function applyActions(args: {
-	projectId: string;
-	runId: string;
-	model: LlmSelectedModel | undefined;
-	actions: ReconcileAction[];
-	existing: DBContextRecommendation[];
-}): Promise<void> {
+async function applyActions(
+	args: {
+		projectId: string;
+		runId: string;
+		model: LlmSelectedModel | undefined;
+		actions: ReconcileAction[];
+		existing: DBContextRecommendation[];
+	},
+	executor: crQueries.Executor,
+): Promise<void> {
 	const byId = new Map(args.existing.map((r) => [r.id, r]));
 	for (const action of args.actions) {
 		if (action.kind === 'insert') {
-			await crQueries.insertRecommendation({
-				projectId: args.projectId,
-				runId: args.runId,
-				fingerprint: action.fingerprint,
-				suggestedFile: action.finding.suggestedFile,
-				subjectKey: action.finding.subjectKey,
-				severity: action.finding.severity,
-				impactScore: action.impactScore,
-				impact: action.impact,
-				insights: action.finding.insights,
-				title: action.finding.title,
-				summary: action.finding.summary,
-				suggestedAction: action.finding.suggestedAction,
-				llmProvider: args.model?.provider,
-				llmModelId: args.model?.modelId,
-			});
+			await crQueries.insertRecommendation(
+				{
+					projectId: args.projectId,
+					runId: args.runId,
+					fingerprint: action.fingerprint,
+					suggestedFile: action.finding.suggestedFile,
+					subjectKey: action.finding.subjectKey,
+					severity: action.finding.severity,
+					impactScore: action.impactScore,
+					impact: action.impact,
+					insights: action.finding.insights,
+					title: action.finding.title,
+					summary: action.finding.summary,
+					suggestedAction: action.finding.suggestedAction,
+					llmProvider: args.model?.provider,
+					llmModelId: args.model?.modelId,
+				},
+				executor,
+			);
 		} else if (action.kind === 'update') {
 			const prev = byId.get(action.id);
 			const patch: Partial<NewContextRecommendation> = {
@@ -236,9 +241,13 @@ async function applyActions(args: {
 			if (action.reopen) {
 				patch.status = 'open';
 			}
-			await crQueries.updateRecommendation(action.id, patch);
+			await crQueries.updateRecommendation(action.id, patch, executor);
 		} else if (action.kind === 'resolve') {
-			await crQueries.updateRecommendation(action.id, { status: 'applied', statusChangedAt: new Date() });
+			await crQueries.updateRecommendation(
+				action.id,
+				{ status: 'applied', statusChangedAt: new Date() },
+				executor,
+			);
 		}
 	}
 }

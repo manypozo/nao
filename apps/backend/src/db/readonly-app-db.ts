@@ -1,6 +1,3 @@
-// ABOUTME: Runs validated, read-only SQL against the NAO app DB inside a per-run,
-// ABOUTME: project-scoped sandbox of temp views that exclude auth/PII columns.
-
 import postgres from 'postgres';
 
 import { env } from '../env';
@@ -96,12 +93,21 @@ async function runPostgres(projectId: string, sql: string): Promise<AppDbQueryRe
 	const ssl = env.DB_SSL ? 'require' : undefined;
 	const client = postgres(dbConfig.dbUrl, { ssl, max: 1 });
 	try {
-		return await client.begin(async (tx) => {
-			await tx`CREATE TEMP TABLE _scope (project_id text NOT NULL) ON COMMIT DROP`;
+		// Build the project-scoped sandbox in a read-write setup transaction. The temp
+		// objects are session-scoped (no ON COMMIT DROP) so they survive into the
+		// read-only query transaction below; they drop when the connection closes.
+		await client.begin(async (tx) => {
+			await tx`CREATE TEMP TABLE _scope (project_id text NOT NULL)`;
 			await tx`INSERT INTO _scope (project_id) VALUES (${projectId})`;
 			for (const view of SCOPED_VIEWS) {
 				await tx.unsafe(`CREATE TEMP VIEW ${view.name} AS ${view.body}`);
 			}
+		});
+		// Run the caller's query in a read-only transaction so any write that slipped
+		// past the validator is rejected at the database level (parity with SQLite's
+		// query_only pragma). CREATE is disallowed under READ ONLY, hence the split.
+		return await client.begin(async (tx) => {
+			await tx`SET TRANSACTION READ ONLY`;
 			const rows = (await tx.unsafe(sql)) as unknown as Record<string, unknown>[];
 			return { columns: rows.length > 0 ? Object.keys(rows[0]) : [], rows: [...rows] };
 		});

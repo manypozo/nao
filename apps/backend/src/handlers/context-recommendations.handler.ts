@@ -1,6 +1,3 @@
-// ABOUTME: Scheduler entry point for the weekly context-recommendations run.
-// ABOUTME: Fans out one analysis run per project.
-
 import { runContextRecommendationsForAllProjects } from '../services/context-recommendations.service';
 import { JobHandler } from '../services/scheduler.service';
 

@@ -6,6 +6,7 @@ import { sql } from 'drizzle-orm';
 import {
 	boolean,
 	check,
+	foreignKey,
 	index,
 	integer,
 	jsonb,
@@ -594,6 +595,7 @@ export const contextRecommendationRun = pgTable(
 	(t) => [
 		index('context_recommendation_run_projectId_idx').on(t.projectId),
 		index('context_recommendation_run_status_idx').on(t.status),
+		unique('context_recommendation_run_id_project_unique').on(t.id, t.projectId),
 	],
 );
 
@@ -606,7 +608,7 @@ export const contextRecommendation = pgTable(
 		projectId: text('project_id')
 			.notNull()
 			.references(() => project.id, { onDelete: 'cascade' }),
-		runId: text('run_id').references(() => contextRecommendationRun.id, { onDelete: 'set null' }),
+		runId: text('run_id').notNull(),
 		fingerprint: text('fingerprint').notNull(),
 		suggestedFile: text('suggested_file').notNull(),
 		subjectKey: text('subject_key').notNull(),
@@ -632,6 +634,11 @@ export const contextRecommendation = pgTable(
 		uniqueIndex('context_recommendation_project_fingerprint_unique').on(t.projectId, t.fingerprint),
 		index('context_recommendation_projectId_status_idx').on(t.projectId, t.status),
 		index('context_recommendation_runId_idx').on(t.runId),
+		foreignKey({
+			columns: [t.runId, t.projectId],
+			foreignColumns: [contextRecommendationRun.id, contextRecommendationRun.projectId],
+			name: 'context_recommendation_run_fk',
+		}).onDelete('cascade'),
 	],
 );
 

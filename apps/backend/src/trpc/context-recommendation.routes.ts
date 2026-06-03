@@ -1,6 +1,3 @@
-// ABOUTME: Admin tRPC surface for context recommendations: list, run status, model
-// ABOUTME: config, and lifecycle status changes. All admin-only, project-scoped.
-
 import { LlmProvider } from '@nao/shared/types';
 import { z } from 'zod';
 

@@ -1,6 +1,3 @@
-// ABOUTME: Collector tools the analysis agent calls to record findings and verified
-// ABOUTME: resolutions. The process reads the collectors after the run to reconcile.
-
 import { z } from 'zod';
 
 import { ProposedFinding } from '../../services/context-recommendations.reconcile';

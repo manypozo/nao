@@ -1,10 +1,10 @@
-// ABOUTME: CRUD and dedup queries for context-recommendation runs and recommendations.
-// ABOUTME: Used by the context-recommendations process and (later) the tRPC surface.
-
 import { and, desc, eq, inArray } from 'drizzle-orm';
 
 import s, { DBContextRecommendation, DBContextRecommendationRun, NewContextRecommendation } from '../db/abstractSchema';
 import { db } from '../db/db';
+
+/** A db handle or an open transaction, so writes can be composed atomically. */
+export type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const ACTIVE_STATUSES = ['open', 'acknowledged', 'snoozed'] as const;
 
@@ -23,8 +23,9 @@ export async function createRun(input: {
 export async function completeRun(
 	runId: string,
 	tokens: { inputTotalTokens?: number; outputTotalTokens?: number; totalTokens?: number } = {},
+	executor: Executor = db,
 ): Promise<void> {
-	await db
+	await executor
 		.update(s.contextRecommendationRun)
 		.set({ status: 'completed', completedAt: new Date(), ...tokens })
 		.where(eq(s.contextRecommendationRun.id, runId))
@@ -61,13 +62,20 @@ export async function getDismissedFingerprints(projectId: string): Promise<strin
 	return rows.map((r) => r.fingerprint);
 }
 
-export async function insertRecommendation(value: NewContextRecommendation): Promise<DBContextRecommendation> {
-	const [rec] = await db.insert(s.contextRecommendation).values(value).returning().execute();
+export async function insertRecommendation(
+	value: NewContextRecommendation,
+	executor: Executor = db,
+): Promise<DBContextRecommendation> {
+	const [rec] = await executor.insert(s.contextRecommendation).values(value).returning().execute();
 	return rec;
 }
 
-export async function updateRecommendation(id: string, patch: Partial<NewContextRecommendation>): Promise<void> {
-	await db
+export async function updateRecommendation(
+	id: string,
+	patch: Partial<NewContextRecommendation>,
+	executor: Executor = db,
+): Promise<void> {
+	await executor
 		.update(s.contextRecommendation)
 		.set({ ...patch, lastSeenAt: new Date() })
 		.where(eq(s.contextRecommendation.id, id))

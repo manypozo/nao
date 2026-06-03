@@ -3,7 +3,17 @@ import type { CitationData, LlmProvider } from '@nao/shared/types';
 import { BUDGET_PERIODS, SHARE_VISIBILITY, USER_ROLES } from '@nao/shared/types';
 import { type ProviderMetadata } from 'ai';
 import { sql } from 'drizzle-orm';
-import { check, index, integer, primaryKey, sqliteTable, text, unique, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import {
+	check,
+	foreignKey,
+	index,
+	integer,
+	primaryKey,
+	sqliteTable,
+	text,
+	unique,
+	uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 
 import { AgentSettings } from '../types/agent-settings';
 import { AUTOMATION_RUN_STATUSES, AutomationIntegrationConfig, AutomationIntegrationResult } from '../types/automation';
@@ -628,6 +638,7 @@ export const contextRecommendationRun = sqliteTable(
 	(t) => [
 		index('context_recommendation_run_projectId_idx').on(t.projectId),
 		index('context_recommendation_run_status_idx').on(t.status),
+		unique('context_recommendation_run_id_project_unique').on(t.id, t.projectId),
 	],
 );
 
@@ -640,7 +651,7 @@ export const contextRecommendation = sqliteTable(
 		projectId: text('project_id')
 			.notNull()
 			.references(() => project.id, { onDelete: 'cascade' }),
-		runId: text('run_id').references(() => contextRecommendationRun.id, { onDelete: 'set null' }),
+		runId: text('run_id').notNull(),
 		fingerprint: text('fingerprint').notNull(),
 		suggestedFile: text('suggested_file').notNull(),
 		subjectKey: text('subject_key').notNull(),
@@ -672,6 +683,11 @@ export const contextRecommendation = sqliteTable(
 		uniqueIndex('context_recommendation_project_fingerprint_unique').on(t.projectId, t.fingerprint),
 		index('context_recommendation_projectId_status_idx').on(t.projectId, t.status),
 		index('context_recommendation_runId_idx').on(t.runId),
+		foreignKey({
+			columns: [t.runId, t.projectId],
+			foreignColumns: [contextRecommendationRun.id, contextRecommendationRun.projectId],
+			name: 'context_recommendation_run_fk',
+		}).onDelete('cascade'),
 	],
 );
 

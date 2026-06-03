@@ -1,6 +1,3 @@
-// ABOUTME: Pure, deterministic impact scoring and lifecycle reconciliation for
-// ABOUTME: context recommendations. No DB or LLM access; fully unit-tested.
-
 import { createHash } from 'crypto';
 
 import {

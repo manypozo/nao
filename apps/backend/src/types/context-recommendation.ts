@@ -1,6 +1,3 @@
-// ABOUTME: Types and enum constants for the context-recommendations feature.
-// ABOUTME: Shared by the DB schema, the analysis process, and the tRPC surface.
-
 export const CONTEXT_RECOMMENDATION_RUN_STATUSES = ['running', 'completed', 'failed'] as const;
 export type ContextRecommendationRunStatus = (typeof CONTEXT_RECOMMENDATION_RUN_STATUSES)[number];
 

@@ -1,6 +1,3 @@
-// ABOUTME: Validates agent-authored SQL for the context-recommendations sandbox.
-// ABOUTME: Enforces read-only (reused) plus a strict project-scoped-view allowlist.
-
 import { Parser } from 'node-sql-parser';
 
 import { isReadOnlySqlQuery } from './sql-filter';

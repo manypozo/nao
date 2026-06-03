@@ -1,6 +1,3 @@
-// ABOUTME: Builds the inline methodology prompt for the context-recommendations agent.
-// ABOUTME: Adapts the audit-context checks + the everbake usage-mining recipes.
-
 import { DBContextRecommendation } from '../db/abstractSchema';
 import { ALLOWED_APP_DB_VIEWS } from '../utils/app-db-allowlist';
 

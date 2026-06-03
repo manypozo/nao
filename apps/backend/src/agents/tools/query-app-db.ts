@@ -1,6 +1,3 @@
-// ABOUTME: Agent tool that runs validated, read-only, project-scoped SQL over the NAO app DB.
-// ABOUTME: Used only by the context-recommendations process to mine usage signal safely.
-
 import { z } from 'zod';
 
 import { runScopedAppDbQuery } from '../../db/readonly-app-db';
