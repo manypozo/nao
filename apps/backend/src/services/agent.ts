@@ -158,6 +158,12 @@ export class AgentService {
 			 * before outbound integration tools fire.
 			 */
 			excludeFollowUps?: boolean;
+			/**
+			 * Step budget for the `excludeFollowUps` stop condition. Defaults to 20.
+			 * Longer analyses (e.g. context recommendations) raise this so the loop
+			 * is not cut off before it finishes recording.
+			 */
+			maxSteps?: number;
 		} = {},
 	): Promise<AgentManager> {
 		this._disposeAgent(chat.id);
@@ -175,7 +181,7 @@ export class AgentService {
 			excludeFollowUps: options.excludeFollowUps,
 		});
 		const stopWhen: StopCondition<AgentTools>[] = options.excludeFollowUps
-			? [stepCountIs(20)]
+			? [stepCountIs(options.maxSteps ?? 20)]
 			: chat.testMode
 				? [hasToolCall('suggest_follow_ups')]
 				: [hasToolCall('suggest_follow_ups'), hasToolCall('clarification')];

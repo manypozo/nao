@@ -51,6 +51,18 @@ describe('reconcile', () => {
 		expect(actions[0].kind).toBe('insert');
 	});
 
+	it('collapses repeat recordings of one resource into a single action (last wins)', () => {
+		const actions = reconcile({
+			...base,
+			existing: [],
+			recorded: [finding({ title: 'first pass' }), finding({ title: 'refined' })],
+			resolvedFingerprints: [],
+			dismissedFingerprints: [],
+		});
+		expect(actions).toHaveLength(1);
+		expect(actions[0]).toMatchObject({ kind: 'insert', finding: { title: 'refined' } });
+	});
+
 	it('suppresses a new finding below the floor', () => {
 		const tiny = finding({
 			insights: [{ signalType: 'tool_error', metric: 'errors', count: 1, exampleChatIds: ['c1'] }],

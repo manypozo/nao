@@ -36,14 +36,14 @@ export function buildMethodologyPrompt(input: {
 		'4. Regeneration / friction: v_chat_message where superseded_at is not null.',
 		'5. Coverage gaps: frequent first user prompts (v_message_part text) with no matching semantics doc.',
 		'',
-		'## Grouping and output',
-		'Group findings by TARGET RESOURCE (a file + a stable subject such as a table, column, or normalized rule).',
-		'For each resource that is CURRENTLY problematic, call `record_recommendation` once with: suggestedFile, subjectKey, severity, title, summary, suggestedAction, and the supporting insights (each: signalType, a metric label, a count, and a few exampleChatIds). Derive counts from query results — never invent them.',
+		'## Recording (record as you go — never batch until the end)',
+		'Your step budget is limited. The MOMENT you have confirmed a problematic resource — both its signal in the data and the relevant context file — call `record_recommendation` for it, then move to the next signal. If you defer recording and run out of steps, the finding is lost, so tackle the strongest signals first.',
+		'Group findings by TARGET RESOURCE (a file + a stable subject such as a table, column, or normalized rule), and call `record_recommendation` once per resource with: suggestedFile, subjectKey, severity, title, summary, suggestedAction, and the supporting insights (each: signalType, a metric label, a count, and a few exampleChatIds). Derive counts from query results — never invent them.',
 		'',
 		'## Re-verify existing recommendations',
 		'These recommendations already exist. For each, either (a) re-record it via `record_recommendation` if the gap STILL exists (with refreshed insights), or (b) call `resolve_recommendation({ fingerprint })` ONLY after you have read the file and verified the gap is fixed. If unsure, leave it alone.',
 		existingBlock,
 		'',
-		'Be precise and evidence-driven. When you have recorded everything, stop.',
+		'Be precise and evidence-driven. Record each substantiated finding the moment you confirm it; stop once every problematic resource you can support has been recorded.',
 	].join('\n');
 }

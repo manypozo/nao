@@ -92,8 +92,14 @@ export function reconcile(input: {
 	const actions: ReconcileAction[] = [];
 	const handled = new Set<string>();
 
+	// Collapse repeat recordings of the same resource within a run (last wins) so a
+	// fingerprint yields exactly one action and never a duplicate insert.
+	const recordedByFingerprint = new Map<string, ProposedFinding>();
 	for (const finding of recorded) {
-		const fingerprint = fingerprintFor(finding.suggestedFile, finding.subjectKey);
+		recordedByFingerprint.set(fingerprintFor(finding.suggestedFile, finding.subjectKey), finding);
+	}
+
+	for (const [fingerprint, finding] of recordedByFingerprint) {
 		if (dismissed.has(fingerprint)) {
 			continue;
 		}

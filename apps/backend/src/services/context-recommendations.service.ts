@@ -20,6 +20,7 @@ import { ExistingRecommendation, reconcile, ReconcileAction, WindowTotals } from
 
 const DEFAULT_LOOKBACK_DAYS = 90;
 const IMPACT_FLOOR = 5;
+const ANALYSIS_STEP_BUDGET = 40;
 
 export async function runContextRecommendations(
 	projectId: string,
@@ -59,6 +60,7 @@ export async function runContextRecommendations(
 		const collector = createRecommendationCollector();
 		const agent = await agentService.create({ ...uiChat, id: chat.id, projectId, userId }, modelSelection, {
 			excludeFollowUps: true,
+			maxSteps: ANALYSIS_STEP_BUDGET,
 			extraTools: {
 				query_app_db: createQueryAppDbTool(projectId),
 				record_recommendation: collector.recordTool,
