@@ -3,6 +3,7 @@ import { readUIMessageStream, UIMessage } from 'ai';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 
 import { getTools } from '../agents/tools';
+import { ContextFixCollector, createContextFixCollector } from '../agents/tools/propose-context-fix';
 import { createQueryAppDbTool } from '../agents/tools/query-app-db';
 import { createRecommendationCollector } from '../agents/tools/record-recommendation';
 import { renderContextRecommendationsPrompt, renderContextRecommendationsSystemPrompt } from '../components/ai';
@@ -14,7 +15,13 @@ import * as projectQueries from '../queries/project.queries';
 import { AgentSettings } from '../types/agent-settings';
 import { logger } from '../utils/logger';
 import { agentService } from './agent';
-import { ExistingRecommendation, reconcile, ReconcileAction } from './context-recommendations.reconcile';
+import {
+	ExistingRecommendation,
+	fingerprintFor,
+	reconcile,
+	ReconcileAction,
+} from './context-recommendations.reconcile';
+import { getGitInfo } from './github';
 
 const DEFAULT_LOOKBACK_DAYS = 90;
 const IMPACT_FLOOR = 5;
@@ -29,16 +36,22 @@ export async function runContextRecommendations(
 	const periodEnd = period?.end ?? now;
 	const periodStart = period?.start ?? (await resolvePeriodStart(projectId, periodEnd));
 
+	const agentSettings = await projectQueries.getAgentSettings(projectId);
+	const model = await agentService.resolveModelSelection(projectId, resolveConfiguredModel(agentSettings));
+
 	const run = await crQueries.createRun({
 		projectId,
 		trigger: options?.trigger ?? 'schedule',
 		windowStart: periodStart,
 		windowEnd: periodEnd,
+		llmProvider: model.provider,
+		llmModelId: model.modelId,
 	});
 
 	try {
-		const agentSettings = await projectQueries.getAgentSettings(projectId);
-		const model = await agentService.resolveModelSelection(projectId, resolveConfiguredModel(agentSettings));
+		const project = await projectQueries.getProjectById(projectId);
+		const proposeFixes = !!project?.path && getGitInfo(project.path).isGithub;
+		const fixCollector = proposeFixes ? createContextFixCollector(project!.path!) : null;
 
 		const existing = await crQueries.getActiveRecommendations(projectId);
 		const dismissedFingerprints = await crQueries.getDismissedFingerprints(projectId);
@@ -48,8 +61,13 @@ export async function runContextRecommendations(
 		const [chat] = await chatQueries.createChat(
 			{ title: 'Context recommendations run', userId, projectId },
 			{
-				text: renderContextRecommendationsPrompt({ windowStart: periodStart, windowEnd: periodEnd, existing }),
-				source: 'web',
+				text: renderContextRecommendationsPrompt({
+					windowStart: periodStart,
+					windowEnd: periodEnd,
+					existing,
+					proposeFixes,
+				}),
+				source: 'contextRecommendations',
 			},
 		);
 		await crQueries.setRunChat(run.id, chat.id);
@@ -63,7 +81,7 @@ export async function runContextRecommendations(
 		const agent = await agentService.create({ ...uiChat, id: chat.id, projectId, userId }, model, {
 			excludeFollowUps: true,
 			maxSteps: ANALYSIS_STEP_BUDGET,
-			systemPrompt: renderContextRecommendationsSystemPrompt(),
+			systemPrompt: renderContextRecommendationsSystemPrompt({ proposeFixes }),
 			tools: ({ agentSettings }) =>
 				getTools(
 					agentSettings,
@@ -71,6 +89,10 @@ export async function runContextRecommendations(
 						query_app_db: createQueryAppDbTool(projectId),
 						record_recommendation: collector.recordTool,
 						resolve_recommendation: collector.resolveTool,
+						...(fixCollector && {
+							edit_file: fixCollector.editTool,
+							propose_manual_fix: fixCollector.manualFixTool,
+						}),
 					},
 					{ excludeFollowUps: true, builtinToolAllowlist: ['read', 'grep', 'list', 'search'] },
 				),
@@ -93,7 +115,7 @@ export async function runContextRecommendations(
 
 		const tokens = await crQueries.getChatTokenTotals(chat.id);
 		await db.transaction(async (tx) => {
-			await applyActions({ projectId, runId: run.id, model, actions, existing }, tx);
+			await applyActions({ projectId, runId: run.id, model, actions, existing, fixCollector }, tx);
 			await crQueries.completeRun(
 				run.id,
 				{ ...tokens, llmProvider: model.provider, llmModelId: model.modelId },
@@ -148,6 +170,27 @@ async function resolvePeriodStart(projectId: string, end: Date): Promise<Date> {
 	return new Date(end.getTime() - DEFAULT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
 }
 
+/** Pulls the agent-proposed fix for a finding, if any, into a persistable patch. */
+function resolveFix(
+	collector: ContextFixCollector | null,
+	suggestedFile: string,
+	subjectKey: string,
+): Partial<NewContextRecommendation> {
+	if (!collector) {
+		return {};
+	}
+	const fix = collector.getFix(fingerprintFor(suggestedFile, subjectKey));
+	if (!fix) {
+		return {};
+	}
+	return {
+		fixKind: fix.fixKind,
+		proposedEdits: fix.proposedEdits,
+		fixGuidance: fix.fixGuidance,
+		fixPrompt: fix.fixPrompt,
+	};
+}
+
 function toExistingRec(r: DBContextRecommendation): ExistingRecommendation {
 	return {
 		id: r.id,
@@ -165,12 +208,14 @@ async function applyActions(
 		model: LlmSelectedModel;
 		actions: ReconcileAction[];
 		existing: DBContextRecommendation[];
+		fixCollector: ContextFixCollector | null;
 	},
 	executor: crQueries.Executor,
 ): Promise<void> {
 	const byId = new Map(args.existing.map((r) => [r.id, r]));
 	for (const action of args.actions) {
 		if (action.kind === 'insert') {
+			const fix = resolveFix(args.fixCollector, action.finding.suggestedFile, action.finding.subjectKey);
 			await crQueries.insertRecommendation(
 				{
 					projectId: args.projectId,
@@ -185,6 +230,7 @@ async function applyActions(
 					title: action.finding.title,
 					summary: action.finding.summary,
 					suggestedAction: action.finding.suggestedAction,
+					...fix,
 					llmProvider: args.model.provider,
 					llmModelId: args.model.modelId,
 				},
@@ -192,6 +238,7 @@ async function applyActions(
 			);
 		} else if (action.kind === 'update') {
 			const prev = byId.get(action.id);
+			const fix = resolveFix(args.fixCollector, action.finding.suggestedFile, action.finding.subjectKey);
 			const patch: Partial<NewContextRecommendation> = {
 				runId: args.runId,
 				severity: action.finding.severity,
@@ -202,6 +249,7 @@ async function applyActions(
 				summary: action.finding.summary,
 				suggestedAction: action.finding.suggestedAction,
 				occurrenceCount: (prev?.occurrenceCount ?? 1) + 1,
+				...fix,
 				llmProvider: args.model.provider,
 				llmModelId: args.model.modelId,
 			};

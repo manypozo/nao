@@ -44,7 +44,16 @@ export interface RecommendationImpact {
 	failureShare: number;
 }
 
-/** Window-wide friction counts a run is scored against. */
+export const CONTEXT_RECOMMENDATION_FIX_KINDS = ['patch', 'manual'] as const;
+export type ContextRecommendationFixKind = (typeof CONTEXT_RECOMMENDATION_FIX_KINDS)[number];
+
+export interface ProposedEdit {
+	path: string;
+	kind: 'edit' | 'create';
+	oldContent: string;
+	newContent: string;
+}
+
 export interface WindowTotals {
 	errors: number;
 	downvotes: number;

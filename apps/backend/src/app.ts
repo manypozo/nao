@@ -313,24 +313,38 @@ export const startServer = async (opts: { port: number; host: string }) => {
 	void runLogCleanup().catch((err) => {
 		logger.error(`Log cleanup failed: ${err instanceof Error ? err.message : String(err)}`, { source: 'system' });
 	});
+
 	registerJob(LOG_CLEANUP_JOB_NAME, logCleanupHandler);
+	await ensureRecurring({ name: LOG_CLEANUP_JOB_NAME, cron: '0 3 * * *', uniqueKey: LOG_CLEANUP_JOB_NAME });
+
 	registerJob(AUTOMATION_JOB_NAME, automationHandler);
 	registerJob(STORY_REFRESH_JOB_NAME, storyRefreshHandler);
-	await ensureRecurring({ name: LOG_CLEANUP_JOB_NAME, cron: '0 3 * * *', uniqueKey: LOG_CLEANUP_JOB_NAME });
+
 	registerJob(MCP_QUERY_DATA_CLEANUP_JOB_NAME, mcpQueryDataCleanupHandler);
 	await ensureRecurring({
 		name: MCP_QUERY_DATA_CLEANUP_JOB_NAME,
 		cron: '0 4 * * *',
 		uniqueKey: MCP_QUERY_DATA_CLEANUP_JOB_NAME,
 	});
-	registerJob(CONTEXT_RECOMMENDATIONS_JOB_NAME, contextRecommendationsHandler);
-	const defaultProject = await getDefaultProject();
-	const recommendationsSettings = defaultProject
-		? (await getAgentSettings(defaultProject.id))?.contextRecommendations
-		: null;
-	await ensureContextRecommendationsSchedule(
-		recommendationsSettings?.frequency ?? DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY,
-	);
+
+	if (env.BETA_CONTEXT_RECOMMENDATIONS_ENABLED) {
+		registerJob(CONTEXT_RECOMMENDATIONS_JOB_NAME, contextRecommendationsHandler);
+		let frequency = DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY;
+		try {
+			const defaultProject = await getDefaultProject();
+			const recommendationsSettings = defaultProject
+				? (await getAgentSettings(defaultProject.id))?.contextRecommendations
+				: null;
+			frequency = recommendationsSettings?.frequency ?? DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY;
+		} catch (err) {
+			logger.error(
+				`Failed to load context recommendations settings, falling back to default frequency: ${err instanceof Error ? err.message : String(err)}`,
+				{ source: 'system' },
+			);
+		}
+		await ensureContextRecommendationsSchedule(frequency);
+	}
+
 	startScheduler();
 	await startLicenseHeartbeat();
 

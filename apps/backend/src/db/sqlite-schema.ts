@@ -4,9 +4,9 @@ import { BUDGET_PERIODS, FOLDER_SYSTEM_TYPE, FOLDER_VISIBILITY, SHARE_VISIBILITY
 import { type ProviderMetadata } from 'ai';
 import { sql } from 'drizzle-orm';
 import {
+	type AnySQLiteColumn,
 	check,
 	foreignKey,
-	type AnySQLiteColumn,
 	index,
 	integer,
 	primaryKey,
@@ -18,12 +18,14 @@ import {
 
 import { AgentSettings } from '../types/agent-settings';
 import { AUTOMATION_RUN_STATUSES, AutomationIntegrationConfig, AutomationIntegrationResult } from '../types/automation';
-import { ForkMetadata, StopReason, ToolState, UIMessagePartType } from '../types/chat';
+import { ForkMetadata, MESSAGE_SOURCES, StopReason, ToolState, UIMessagePartType } from '../types/chat';
 import {
+	CONTEXT_RECOMMENDATION_FIX_KINDS,
 	CONTEXT_RECOMMENDATION_RUN_STATUSES,
 	CONTEXT_RECOMMENDATION_RUN_TRIGGERS,
 	CONTEXT_RECOMMENDATION_SEVERITIES,
 	CONTEXT_RECOMMENDATION_STATUSES,
+	ProposedEdit,
 	RecommendationImpact,
 	RecommendationInsight,
 } from '../types/context-recommendation';
@@ -272,7 +274,7 @@ export const chatMessage = sqliteTable(
 		llmProvider: text('llm_provider').$type<LlmProvider>(),
 		llmModelId: text('llm_model_id'),
 		supersededAt: integer('superseded_at', { mode: 'timestamp_ms' }),
-		source: text('source', { enum: ['slack', 'teams', 'telegram', 'whatsapp', 'web', 'mcp'] }),
+		source: text('source', { enum: MESSAGE_SOURCES }),
 		isForked: integer('isForked', { mode: 'boolean' }),
 		citation: text('citation', { mode: 'json' }).$type<CitationData>(),
 		createdAt: integer('created_at', { mode: 'timestamp_ms' })
@@ -672,6 +674,13 @@ export const contextRecommendation = sqliteTable(
 		title: text('title').notNull(),
 		summary: text('summary').notNull(),
 		suggestedAction: text('suggested_action').notNull(),
+		fixKind: text('fix_kind', { enum: CONTEXT_RECOMMENDATION_FIX_KINDS }),
+		proposedEdits: text('proposed_edits', { mode: 'json' }).$type<ProposedEdit[]>(),
+		fixGuidance: text('fix_guidance'),
+		fixPrompt: text('fix_prompt'),
+		prUrl: text('pr_url'),
+		prBranch: text('pr_branch'),
+		prCreatedAt: integer('pr_created_at', { mode: 'timestamp_ms' }),
 		llmProvider: text('llm_provider').$type<LlmProvider>(),
 		llmModelId: text('llm_model_id'),
 		firstSeenAt: integer('first_seen_at', { mode: 'timestamp_ms' })

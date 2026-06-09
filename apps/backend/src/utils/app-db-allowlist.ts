@@ -3,10 +3,7 @@ import { Parser } from 'node-sql-parser';
 import { isReadOnlySqlQuery } from './sql-filter';
 
 export const ALLOWED_APP_DB_VIEWS = [
-	'v_chat',
-	'v_chat_message',
-	'v_message_part',
-	'v_message_feedback',
+	'v_messages',
 	'v_memories',
 	'v_llm_inference',
 	'v_mcp_call_log',

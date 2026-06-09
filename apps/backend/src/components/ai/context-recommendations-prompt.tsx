@@ -1,6 +1,5 @@
 import { DBContextRecommendation } from '../../db/abstractSchema';
 import { Block, Code, List, ListItem, renderToMarkdown, Span, Title } from '../../lib/markdown';
-import { ALLOWED_APP_DB_VIEWS } from '../../utils/app-db-allowlist';
 
 type ExistingRecommendationSummary = Pick<
 	DBContextRecommendation,
@@ -11,13 +10,19 @@ type ContextRecommendationsPromptProps = {
 	windowStart: Date;
 	windowEnd: Date;
 	existing: ExistingRecommendationSummary[];
+	proposeFixes?: boolean;
 };
 
 export function renderContextRecommendationsPrompt(props: ContextRecommendationsPromptProps): string {
 	return renderToMarkdown(<ContextRecommendationsPrompt {...props} />);
 }
 
-function ContextRecommendationsPrompt({ windowStart, windowEnd, existing }: ContextRecommendationsPromptProps) {
+function ContextRecommendationsPrompt({
+	windowStart,
+	windowEnd,
+	existing,
+	proposeFixes = false,
+}: ContextRecommendationsPromptProps) {
 	return (
 		<Block>
 			<Span>
@@ -25,30 +30,20 @@ function ContextRecommendationsPrompt({ windowStart, windowEnd, existing }: Cont
 			</Span>
 
 			<Block separator={'\n'}>
-				<Title>Data access</Title>
-				<Span>
-					<Code>query_app_db</Code> runs read-only SQL over these project-scoped usage views ONLY:{' '}
-					{ALLOWED_APP_DB_VIEWS.join(', ')}.
-				</Span>
-			</Block>
-
-			<Block separator={'\n'}>
 				<Title>What to look for (mine the window, then locate the fix)</Title>
 				<List ordered>
 					<ListItem>
-						Tool errors: v_message_part where tool_state = &quot;output-error&quot; — cluster by the failing
+						Tool errors: v_messages where tool_state = &quot;output-error&quot; — cluster by the failing
 						table/column. Cross-reference databases/**/columns.md and description.md.
 					</ListItem>
 					<ListItem>
 						Repeated corrections: v_memories where category = &quot;global_rule&quot; — each is a rule users
 						had to teach; it likely belongs in RULES.md or semantics/*.md.
 					</ListItem>
+					<ListItem>Downvote themes: v_messages where vote = &quot;down&quot; (+ explanation).</ListItem>
+					<ListItem>Regeneration / friction: v_messages where superseded_at is not null.</ListItem>
 					<ListItem>
-						Downvote themes: v_message_feedback where vote = &quot;down&quot; (+ explanation).
-					</ListItem>
-					<ListItem>Regeneration / friction: v_chat_message where superseded_at is not null.</ListItem>
-					<ListItem>
-						Coverage gaps: frequent first user prompts (v_message_part text) with no matching semantics doc.
+						Coverage gaps: frequent first user prompts (v_messages text) with no matching semantics doc.
 					</ListItem>
 				</List>
 			</Block>
@@ -82,8 +77,11 @@ function ContextRecommendationsPrompt({ windowStart, windowEnd, existing }: Cont
 			</Block>
 
 			<Span>
-				Be precise and evidence-driven. Record each substantiated finding the moment you confirm it; stop once
-				every problematic resource you can support has been recorded.
+				Be precise and evidence-driven. Record each substantiated finding the moment you confirm it
+				{proposeFixes
+					? ', then immediately propose its fix (edit_file for human-written files, propose_manual_fix for auto-generated ones)'
+					: ''}
+				; stop once every problematic resource you can support has been recorded.
 			</Span>
 		</Block>
 	);

@@ -112,6 +112,27 @@ export async function listRecommendations(
 		.execute();
 }
 
+export async function getRecommendationById(projectId: string, id: string): Promise<DBContextRecommendation | null> {
+	const [rec] = await db
+		.select()
+		.from(s.contextRecommendation)
+		.where(and(eq(s.contextRecommendation.id, id), eq(s.contextRecommendation.projectId, projectId)))
+		.limit(1)
+		.execute();
+	return rec ?? null;
+}
+
+export async function setRecommendationPr(
+	id: string,
+	pr: { prUrl: string; prBranch: string; prCreatedAt: Date },
+): Promise<void> {
+	await db
+		.update(s.contextRecommendation)
+		.set({ prUrl: pr.prUrl, prBranch: pr.prBranch, prCreatedAt: pr.prCreatedAt })
+		.where(eq(s.contextRecommendation.id, id))
+		.execute();
+}
+
 export async function getLatestRun(projectId: string): Promise<DBContextRecommendationRun | null> {
 	const [run] = await db
 		.select()

@@ -75,6 +75,8 @@ const settingsNavItems: NavItem[] = [
 		label: 'Recommendations',
 		to: '/settings/recommendations',
 		visible: ({ isAdmin }) => isAdmin,
+		badge: 'Beta',
+		badgeVariant: 'new',
 	},
 	{
 		label: 'Logs',
