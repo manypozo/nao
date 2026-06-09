@@ -236,16 +236,40 @@ function RecommendationsPage() {
 						) : !recommendations.data || recommendations.data.length === 0 ? (
 							<Empty>No recommendations yet. They appear after the next analysis run.</Empty>
 						) : (
-							<div className='flex flex-col gap-3'>
-								{recommendations.data.map((rec) => (
-									<RecommendationCard
-										key={rec.id}
-										recommendation={rec}
-										onChangeStatus={changeStatus}
-										isPending={setStatus.isPending}
-									/>
-								))}
-							</div>
+							(() => {
+								const active = recommendations.data.filter((rec) => rec.status === 'open');
+								const handled = recommendations.data.filter((rec) => rec.status !== 'open');
+								return (
+									<div className='flex flex-col gap-3'>
+										{active.map((rec) => (
+											<RecommendationCard
+												key={rec.id}
+												recommendation={rec}
+												onChangeStatus={changeStatus}
+												isPending={setStatus.isPending}
+											/>
+										))}
+										{handled.length > 0 && (
+											<>
+												<div className='flex items-center gap-3 pt-2 text-xs font-medium text-muted-foreground'>
+													<span className='h-px flex-1 bg-border' />
+													Done ({handled.length})
+													<span className='h-px flex-1 bg-border' />
+												</div>
+												{handled.map((rec) => (
+													<RecommendationCard
+														key={rec.id}
+														recommendation={rec}
+														onChangeStatus={changeStatus}
+														isPending={setStatus.isPending}
+														defaultCollapsed
+													/>
+												))}
+											</>
+										)}
+									</div>
+								);
+							})()
 						)}
 					</SettingsCard>
 				</SettingsPageWrapper>
