@@ -1,10 +1,14 @@
 import { LlmProvider } from '@nao/shared/types';
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
+import { ensureContextRecommendationsSchedule } from '../handlers/context-recommendations.handler';
 import * as crQueries from '../queries/context-recommendation.queries';
 import { getAgentSettings, updateAgentSettings } from '../queries/project.queries';
-import { CONTEXT_RECOMMENDATION_STATUSES } from '../types/context-recommendation';
+import { runContextRecommendations } from '../services/context-recommendations.service';
+import { CONTEXT_RECOMMENDATION_FREQUENCIES, CONTEXT_RECOMMENDATION_STATUSES } from '../types/context-recommendation';
 import { getProjectAvailableModels } from '../utils/llm';
+import { logger } from '../utils/logger';
 import { adminProtectedProcedure } from './trpc';
 
 export const contextRecommendationRoutes = {
@@ -14,6 +18,17 @@ export const contextRecommendationRoutes = {
 
 	latestRun: adminProtectedProcedure.query(async ({ ctx }) => crQueries.getLatestRun(ctx.project.id)),
 
+	run: adminProtectedProcedure.mutation(async ({ ctx }) => {
+		const latestRun = await crQueries.getLatestRun(ctx.project.id);
+		if (latestRun?.status === 'running') {
+			throw new TRPCError({ code: 'CONFLICT', message: 'A recommendations run is already in progress.' });
+		}
+		void runContextRecommendations(ctx.project.id, { trigger: 'manual' }).catch((err) => {
+			logger.error(`Manual context recommendations run failed: ${String(err)}`, { source: 'agent' });
+		});
+		return { started: true };
+	}),
+
 	listAvailableModels: adminProtectedProcedure.query(async ({ ctx }) => getProjectAvailableModels(ctx.project.id)),
 
 	getConfig: adminProtectedProcedure.query(async ({ ctx }) => {
@@ -22,11 +37,25 @@ export const contextRecommendationRoutes = {
 	}),
 
 	setConfig: adminProtectedProcedure
-		.input(z.object({ modelProvider: z.string(), modelId: z.string() }))
+		.input(
+			z.object({
+				modelProvider: z.string().optional(),
+				modelId: z.string().optional(),
+				frequency: z.enum(CONTEXT_RECOMMENDATION_FREQUENCIES).optional(),
+			}),
+		)
 		.mutation(async ({ ctx, input }) => {
+			const current = (await getAgentSettings(ctx.project.id))?.contextRecommendations;
 			await updateAgentSettings(ctx.project.id, {
-				contextRecommendations: { modelProvider: input.modelProvider as LlmProvider, modelId: input.modelId },
+				contextRecommendations: {
+					modelProvider: (input.modelProvider as LlmProvider) ?? current?.modelProvider,
+					modelId: input.modelId ?? current?.modelId,
+					frequency: input.frequency ?? current?.frequency,
+				},
 			});
+			if (input.frequency) {
+				await ensureContextRecommendationsSchedule(input.frequency, { reset: true });
+			}
 		}),
 
 	setStatus: adminProtectedProcedure

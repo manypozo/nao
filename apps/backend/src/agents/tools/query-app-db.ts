@@ -27,7 +27,7 @@ export async function queryAppDb(projectId: string, sql: string): Promise<QueryA
 
 export function createQueryAppDbTool(projectId: string) {
 	return createTool<Input, QueryAppDbOutput>({
-		description: `Run a read-only SQL query over the NAO app database to mine usage signal. Only SELECT/WITH over these project-scoped views is allowed: ${ALLOWED_APP_DB_VIEWS.join(', ')}.`,
+		description: `Run a read-only SQL query over the nao app database to mine usage signal. Only SELECT/WITH over these project-scoped views is allowed: ${ALLOWED_APP_DB_VIEWS.join(', ')}.`,
 		inputSchema: InputSchema,
 		execute: async ({ sql }) => queryAppDb(projectId, sql),
 	});

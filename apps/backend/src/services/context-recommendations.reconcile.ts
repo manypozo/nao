@@ -5,6 +5,7 @@ import {
 	ContextRecommendationStatus,
 	RecommendationImpact,
 	RecommendationInsight,
+	WindowTotals,
 } from '../types/context-recommendation';
 
 export interface ProposedFinding {
@@ -15,12 +16,6 @@ export interface ProposedFinding {
 	summary: string;
 	suggestedAction: string;
 	insights: RecommendationInsight[];
-}
-
-export interface WindowTotals {
-	errors: number;
-	downvotes: number;
-	regenerations: number;
 }
 
 export interface ExistingRecommendation {
@@ -53,23 +48,22 @@ export function fingerprintFor(suggestedFile: string, subjectKey: string): strin
 	return createHash('sha256').update(`${suggestedFile} ${subjectKey}`).digest('hex');
 }
 
+/**
+ * Scores a finding so recommendations can be ordered (highest impact first) and
+ * weak signals filtered out via the impact floor. The score blends two things:
+ * the share of the window's total friction the finding accounts for, and how many
+ * distinct chats it touched.
+ */
 export function computeImpact(
 	insights: RecommendationInsight[],
 	totals: WindowTotals,
 ): { impact: RecommendationImpact; impactScore: number } {
-	const chatIds = new Set<string>();
-	let totalCount = 0;
-	for (const insight of insights) {
-		totalCount += insight.count;
-		for (const id of insight.exampleChatIds ?? []) {
-			chatIds.add(id);
-		}
-	}
-	const denominator = Math.max(1, totals.errors + totals.downvotes + totals.regenerations);
-	const failureShare = Math.min(1, totalCount / denominator);
-	const affectedChats = chatIds.size;
-	// affectedUsers is enriched by the process via a query; default to 0 here.
-	const impact: RecommendationImpact = { affectedChats, affectedUsers: 0, failureShare };
+	const affectedChats = new Set(insights.flatMap((insight) => insight.exampleChatIds ?? [])).size;
+	const findingCount = insights.reduce((sum, insight) => sum + insight.count, 0);
+	const totalFriction = totals.errors + totals.downvotes + totals.regenerations;
+	const failureShare = totalFriction === 0 ? 0 : Math.min(1, findingCount / totalFriction);
+
+	const impact: RecommendationImpact = { affectedChats, failureShare };
 	const impactScore = Math.round(failureShare * 100) + affectedChats * 5;
 	return { impact, impactScore };
 }

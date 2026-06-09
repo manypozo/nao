@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
+import { useEffect, useRef } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,21 @@ const STATUS_LABEL = {
 
 const SNOOZE_MS = 30 * 24 * 60 * 60 * 1000;
 
+const FREQUENCY_OPTIONS = [
+	{ value: 'daily', label: 'Daily' },
+	{ value: 'weekly', label: 'Weekly' },
+	{ value: 'monthly', label: 'Monthly' },
+] as const;
+
+type Frequency = (typeof FREQUENCY_OPTIONS)[number]['value'];
+
+/** The job runs at 03:00 UTC; render that moment in the viewer's local timezone (display only). */
+function localRunTime(): string {
+	const at = new Date();
+	at.setUTCHours(3, 0, 0, 0);
+	return at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
 function exampleChatIds(insights: { exampleChatIds?: string[] }[] | null): string[] {
 	const ids = new Set<string>();
 	for (const insight of insights ?? []) {
@@ -41,12 +57,32 @@ function exampleChatIds(insights: { exampleChatIds?: string[] }[] | null): strin
 function RecommendationsPage() {
 	const queryClient = useQueryClient();
 	const recommendations = useQuery(trpc.contextRecommendation.list.queryOptions({}));
-	const latestRun = useQuery(trpc.contextRecommendation.latestRun.queryOptions());
+	const latestRun = useQuery({
+		...trpc.contextRecommendation.latestRun.queryOptions(),
+		refetchInterval: (query) => (query.state.data?.status === 'running' ? 3000 : false),
+	});
 	const availableModels = useQuery(trpc.contextRecommendation.listAvailableModels.queryOptions());
 	const config = useQuery(trpc.contextRecommendation.getConfig.queryOptions());
 
 	const setConfig = useMutation(trpc.contextRecommendation.setConfig.mutationOptions());
 	const setStatus = useMutation(trpc.contextRecommendation.setStatus.mutationOptions());
+	const run = useMutation(trpc.contextRecommendation.run.mutationOptions());
+
+	const isRunning = run.isPending || latestRun.data?.status === 'running';
+
+	const handleRun = async () => {
+		await run.mutateAsync();
+		queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.latestRun.queryKey() });
+	};
+
+	const previousRunStatus = useRef(latestRun.data?.status);
+	useEffect(() => {
+		const status = latestRun.data?.status;
+		if (previousRunStatus.current === 'running' && status && status !== 'running') {
+			queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.list.queryKey({}) });
+		}
+		previousRunStatus.current = status;
+	}, [latestRun.data?.status, queryClient]);
 
 	const selectedModelValue =
 		config.data?.modelProvider && config.data?.modelId
@@ -56,6 +92,13 @@ function RecommendationsPage() {
 	const handleModelChange = async (value: string) => {
 		const [provider, ...rest] = value.split(':');
 		await setConfig.mutateAsync({ modelProvider: provider, modelId: rest.join(':') });
+		queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.getConfig.queryKey() });
+	};
+
+	const selectedFrequency: Frequency = config.data?.frequency ?? 'weekly';
+
+	const handleFrequencyChange = async (value: string) => {
+		await setConfig.mutateAsync({ frequency: value as Frequency });
 		queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.getConfig.queryKey() });
 	};
 
@@ -75,35 +118,72 @@ function RecommendationsPage() {
 				titleSize='lg'
 				description="Diagnostic suggestions for improving this project's context, mined from real usage."
 				action={
-					latestRun.data ? (
-						<span className='text-xs text-muted-foreground'>
-							Last run: {new Date(latestRun.data.startedAt).toLocaleString()} ({latestRun.data.status})
-						</span>
-					) : undefined
+					<div className='flex items-center gap-3'>
+						{latestRun.data && (
+							<span className='text-xs text-muted-foreground'>
+								Last run: {new Date(latestRun.data.startedAt).toLocaleString()} ({latestRun.data.status}
+								)
+							</span>
+						)}
+						<Button size='sm' onClick={handleRun} disabled={isRunning}>
+							{isRunning && <Spinner className='size-4' />}
+							{isRunning ? 'Running…' : 'Run now'}
+						</Button>
+					</div>
 				}
 			>
-				<div className='flex items-center justify-between gap-4'>
-					<div className='text-sm'>Analysis model</div>
-					<div className='w-72'>
-						<Select
-							value={selectedModelValue}
-							onValueChange={handleModelChange}
-							disabled={setConfig.isPending}
-						>
-							<SelectTrigger className='w-full'>
-								<SelectValue placeholder='Project default' />
-							</SelectTrigger>
-							<SelectContent>
-								{availableModels.data?.map((m) => (
-									<SelectItem key={`${m.provider}:${m.modelId}`} value={`${m.provider}:${m.modelId}`}>
-										<div className='flex items-center gap-2'>
-											<LlmProviderIcon provider={m.provider} className='size-4' />
-											{m.name}
-										</div>
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
+				<div className='flex flex-col gap-4'>
+					<div className='flex items-center justify-between gap-4'>
+						<div className='text-sm'>Analysis model</div>
+						<div className='w-72'>
+							<Select
+								value={selectedModelValue}
+								onValueChange={handleModelChange}
+								disabled={setConfig.isPending}
+							>
+								<SelectTrigger className='w-full'>
+									<SelectValue placeholder='Project default' />
+								</SelectTrigger>
+								<SelectContent>
+									{availableModels.data?.map((m) => (
+										<SelectItem
+											key={`${m.provider}:${m.modelId}`}
+											value={`${m.provider}:${m.modelId}`}
+										>
+											<div className='flex items-center gap-2'>
+												<LlmProviderIcon provider={m.provider} className='size-4' />
+												{m.name}
+											</div>
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+					</div>
+
+					<div className='flex items-center justify-between gap-4'>
+						<div>
+							<div className='text-sm'>Run frequency</div>
+							<div className='text-xs text-muted-foreground'>Runs at {localRunTime()} your time</div>
+						</div>
+						<div className='w-72'>
+							<Select
+								value={selectedFrequency}
+								onValueChange={handleFrequencyChange}
+								disabled={setConfig.isPending}
+							>
+								<SelectTrigger className='w-full'>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									{FREQUENCY_OPTIONS.map((f) => (
+										<SelectItem key={f.value} value={f.value}>
+											{f.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
 					</div>
 				</div>
 			</SettingsCard>

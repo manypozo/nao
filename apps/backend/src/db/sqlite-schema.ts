@@ -620,6 +620,7 @@ export const contextRecommendationRun = sqliteTable(
 		projectId: text('project_id')
 			.notNull()
 			.references(() => project.id, { onDelete: 'cascade' }),
+		chatId: text('chat_id').references(() => chat.id, { onDelete: 'set null' }),
 		trigger: text('trigger', { enum: CONTEXT_RECOMMENDATION_RUN_TRIGGERS }).notNull().default('schedule'),
 		status: text('status', { enum: CONTEXT_RECOMMENDATION_RUN_STATUSES }).notNull().default('running'),
 		windowStart: integer('window_start', { mode: 'timestamp_ms' }),
@@ -637,6 +638,7 @@ export const contextRecommendationRun = sqliteTable(
 	},
 	(t) => [
 		index('context_recommendation_run_projectId_idx').on(t.projectId),
+		index('context_recommendation_run_chatId_idx').on(t.chatId),
 		index('context_recommendation_run_status_idx').on(t.status),
 		unique('context_recommendation_run_id_project_unique').on(t.id, t.projectId),
 	],

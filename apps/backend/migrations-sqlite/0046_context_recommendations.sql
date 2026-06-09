@@ -1,7 +1,7 @@
 CREATE TABLE `context_recommendation` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
-	`run_id` text,
+	`run_id` text NOT NULL,
 	`fingerprint` text NOT NULL,
 	`suggested_file` text NOT NULL,
 	`subject_key` text NOT NULL,
@@ -23,8 +23,8 @@ CREATE TABLE `context_recommendation` (
 	`status_changed_by` text,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`run_id`) REFERENCES `context_recommendation_run`(`id`) ON UPDATE no action ON DELETE set null,
-	FOREIGN KEY (`status_changed_by`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE set null
+	FOREIGN KEY (`status_changed_by`) REFERENCES `user`(`id`) ON UPDATE no action ON DELETE set null,
+	FOREIGN KEY (`run_id`,`project_id`) REFERENCES `context_recommendation_run`(`id`,`project_id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `context_recommendation_project_fingerprint_unique` ON `context_recommendation` (`project_id`,`fingerprint`);--> statement-breakpoint
@@ -33,6 +33,7 @@ CREATE INDEX `context_recommendation_runId_idx` ON `context_recommendation` (`ru
 CREATE TABLE `context_recommendation_run` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,
+	`chat_id` text,
 	`trigger` text DEFAULT 'schedule' NOT NULL,
 	`status` text DEFAULT 'running' NOT NULL,
 	`window_start` integer,
@@ -45,8 +46,11 @@ CREATE TABLE `context_recommendation_run` (
 	`input_total_tokens` integer,
 	`output_total_tokens` integer,
 	`total_tokens` integer,
-	FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON UPDATE no action ON DELETE cascade
+	FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`chat_id`) REFERENCES `chat`(`id`) ON UPDATE no action ON DELETE set null
 );
 --> statement-breakpoint
 CREATE INDEX `context_recommendation_run_projectId_idx` ON `context_recommendation_run` (`project_id`);--> statement-breakpoint
-CREATE INDEX `context_recommendation_run_status_idx` ON `context_recommendation_run` (`status`);
+CREATE INDEX `context_recommendation_run_chatId_idx` ON `context_recommendation_run` (`chat_id`);--> statement-breakpoint
+CREATE INDEX `context_recommendation_run_status_idx` ON `context_recommendation_run` (`status`);--> statement-breakpoint
+CREATE UNIQUE INDEX `context_recommendation_run_id_project_unique` ON `context_recommendation_run` (`id`,`project_id`);

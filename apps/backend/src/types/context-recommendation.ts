@@ -1,11 +1,23 @@
 export const CONTEXT_RECOMMENDATION_RUN_STATUSES = ['running', 'completed', 'failed'] as const;
 export type ContextRecommendationRunStatus = (typeof CONTEXT_RECOMMENDATION_RUN_STATUSES)[number];
 
-export const CONTEXT_RECOMMENDATION_RUN_TRIGGERS = ['schedule'] as const;
+export const CONTEXT_RECOMMENDATION_RUN_TRIGGERS = ['schedule', 'manual'] as const;
 export type ContextRecommendationRunTrigger = (typeof CONTEXT_RECOMMENDATION_RUN_TRIGGERS)[number];
 
 export const CONTEXT_RECOMMENDATION_STATUSES = ['open', 'acknowledged', 'snoozed', 'applied', 'dismissed'] as const;
 export type ContextRecommendationStatus = (typeof CONTEXT_RECOMMENDATION_STATUSES)[number];
+
+export const CONTEXT_RECOMMENDATION_FREQUENCIES = ['daily', 'weekly', 'monthly'] as const;
+export type ContextRecommendationFrequency = (typeof CONTEXT_RECOMMENDATION_FREQUENCIES)[number];
+
+export const DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY: ContextRecommendationFrequency = 'weekly';
+
+/** Cron expressions for each frequency. All run at 03:00 UTC. */
+export const CONTEXT_RECOMMENDATION_FREQUENCY_CRON: Record<ContextRecommendationFrequency, string> = {
+	daily: '0 3 * * *',
+	weekly: '0 3 * * 1',
+	monthly: '0 3 1 * *',
+};
 
 export const CONTEXT_RECOMMENDATION_SEVERITIES = ['high', 'medium', 'low'] as const;
 export type ContextRecommendationSeverity = (typeof CONTEXT_RECOMMENDATION_SEVERITIES)[number];
@@ -29,6 +41,12 @@ export interface RecommendationInsight {
 
 export interface RecommendationImpact {
 	affectedChats: number;
-	affectedUsers: number;
 	failureShare: number;
+}
+
+/** Window-wide friction counts a run is scored against. */
+export interface WindowTotals {
+	errors: number;
+	downvotes: number;
+	regenerations: number;
 }

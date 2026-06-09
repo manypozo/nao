@@ -14,12 +14,14 @@ import { AUTOMATION_JOB_NAME, automationHandler } from './handlers/automation.ha
 import {
 	CONTEXT_RECOMMENDATIONS_JOB_NAME,
 	contextRecommendationsHandler,
+	ensureContextRecommendationsSchedule,
 } from './handlers/context-recommendations.handler';
 import { LOG_CLEANUP_JOB_NAME, logCleanupHandler, runLogCleanup } from './handlers/log-cleanup.handler';
 import { MCP_QUERY_DATA_CLEANUP_JOB_NAME, mcpQueryDataCleanupHandler } from './handlers/mcp-query-data-cleanup.handler';
 import { STORY_REFRESH_JOB_NAME, storyRefreshHandler } from './handlers/story-refresh.handler';
 import { mcpServerRoutes } from './mcp/routes';
 import { ensureOrganizationSetup } from './queries/organization.queries';
+import { getAgentSettings, getDefaultProject } from './queries/project.queries';
 import { agentRoutes } from './routes/agent';
 import { authRoutes } from './routes/auth';
 import { authErrorRedirectRoutes } from './routes/auth-error-redirect';
@@ -42,6 +44,7 @@ import { ensureRecurring, registerJob, startScheduler } from './services/schedul
 import { slackService } from './services/slack';
 import { TrpcRouter, trpcRouter } from './trpc/router';
 import { createContext } from './trpc/trpc';
+import { DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY } from './types/context-recommendation';
 import { BudgetExceededError, HandlerError } from './utils/error';
 import { logger } from './utils/logger';
 
@@ -321,11 +324,13 @@ export const startServer = async (opts: { port: number; host: string }) => {
 		uniqueKey: MCP_QUERY_DATA_CLEANUP_JOB_NAME,
 	});
 	registerJob(CONTEXT_RECOMMENDATIONS_JOB_NAME, contextRecommendationsHandler);
-	await ensureRecurring({
-		name: CONTEXT_RECOMMENDATIONS_JOB_NAME,
-		cron: '0 6 * * 1',
-		uniqueKey: CONTEXT_RECOMMENDATIONS_JOB_NAME,
-	});
+	const defaultProject = await getDefaultProject();
+	const recommendationsSettings = defaultProject
+		? (await getAgentSettings(defaultProject.id))?.contextRecommendations
+		: null;
+	await ensureContextRecommendationsSchedule(
+		recommendationsSettings?.frequency ?? DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY,
+	);
 	startScheduler();
 	await startLicenseHeartbeat();
 

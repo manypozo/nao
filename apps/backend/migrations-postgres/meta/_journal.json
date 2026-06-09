@@ -327,15 +327,8 @@
     {
       "idx": 46,
       "version": "7",
-      "when": 1780329118157,
+      "when": 1780924303944,
       "tag": "0046_context_recommendations",
-      "breakpoints": true
-    },
-    {
-      "idx": 47,
-      "version": "7",
-      "when": 1780501590127,
-      "tag": "0047_scope_recommendation_to_run_project",
       "breakpoints": true
     }
   ]

@@ -1,5 +1,7 @@
 import type { LlmProvider } from '@nao/shared/types';
 
+import type { ContextRecommendationFrequency } from './context-recommendation';
+
 export type WebSearchMode = 'provider';
 
 export interface AgentSettings {
@@ -23,5 +25,6 @@ export interface AgentSettings {
 	contextRecommendations?: {
 		modelProvider?: LlmProvider;
 		modelId?: string;
+		frequency?: ContextRecommendationFrequency;
 	};
 }

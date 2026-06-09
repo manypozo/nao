@@ -92,6 +92,22 @@ export type AgentChat = Pick<DBChat, 'id' | 'projectId' | 'userId'> & {
 	testMode?: boolean;
 };
 
+/** Dependencies a tool resolver receives once a run's context has been resolved. */
+export interface AgentToolsContext {
+	chat: AgentChat;
+	agentSettings: AgentSettings | null;
+	toolContext: ToolContext;
+	/** Web-search tools resolved from project settings, or null when web search is disabled. */
+	webTools: Record<string, unknown> | null;
+}
+
+/** Builds the tool set a run should expose. Callers pass one to `create` to customise tools. */
+export type AgentToolsResolver = (context: AgentToolsContext) => AgentTools | Promise<AgentTools>;
+
+/** Default tool set for interactive runs: all built-ins, MCP tools and web search. */
+export const defaultAgentTools: AgentToolsResolver = ({ chat, agentSettings, webTools }) =>
+	getTools(agentSettings, webTools ?? {}, { testMode: chat.testMode });
+
 export async function buildToolContext(opts: {
 	projectId: string;
 	userId: string;
@@ -144,13 +160,21 @@ export class AgentService {
 		await assertBudgetNotExceeded(projectId, resolved.provider);
 	}
 
+	/** Resolves the concrete model a run will use (project default when none is configured). */
+	async resolveModelSelection(projectId: string, modelSelection?: LlmSelectedModel): Promise<LlmSelectedModel> {
+		return this._getResolvedLlmSelectedModel(projectId, modelSelection);
+	}
+
 	async create(
 		chat: AgentChat,
 		modelSelection?: LlmSelectedModel,
 		options: {
-			extraTools?: Record<string, unknown>;
-			mcpEnabled?: boolean;
-			mcpServers?: string[] | null;
+			/**
+			 * Resolves the tool set the run exposes. Defaults to `defaultAgentTools`
+			 * (all built-ins, MCP and web search). Pass a custom resolver to restrict
+			 * or extend the tools (e.g. automations, context recommendations).
+			 */
+			tools?: AgentToolsResolver;
 			/**
 			 * Removes `suggest_follow_ups` and switches the loop's stop condition
 			 * to a step counter. Used by non-interactive runs (e.g. automations)
@@ -164,6 +188,13 @@ export class AgentService {
 			 * is not cut off before it finishes recording.
 			 */
 			maxSteps?: number;
+			/**
+			 * Replaces the standard system prompt with a fully formed prompt. Skips the
+			 * default instructions, user rules (RULES.md), memories and connections —
+			 * used by runs where that context is the subject of the task rather than
+			 * authoritative guidance (e.g. context recommendations).
+			 */
+			systemPrompt?: string;
 		} = {},
 	): Promise<AgentManager> {
 		this._disposeAgent(chat.id);
@@ -173,13 +204,8 @@ export class AgentService {
 		const agentSettings = await projectQueries.getAgentSettings(chat.projectId);
 		const toolContext = await this._getToolContext(chat.projectId, chat.id, chat.userId, agentSettings);
 		const webTools = await this._resolveWebTools(chat.projectId, resolvedLlmSelectedModel.provider, agentSettings);
-		const extraTools = { ...(webTools ?? {}), ...(options.extraTools ?? {}) };
-		const agentTools = getTools(agentSettings, extraTools, {
-			testMode: chat.testMode,
-			mcpEnabled: options.mcpEnabled,
-			mcpServers: options.mcpServers,
-			excludeFollowUps: options.excludeFollowUps,
-		});
+		const resolveTools = options.tools ?? defaultAgentTools;
+		const agentTools = await resolveTools({ chat, agentSettings, toolContext, webTools });
 		const stopWhen: StopCondition<AgentTools>[] = options.excludeFollowUps
 			? [stepCountIs(options.maxSteps ?? 20)]
 			: chat.testMode
@@ -194,6 +220,7 @@ export class AgentService {
 			agentTools,
 			toolContext,
 			stopWhen,
+			options.systemPrompt,
 		);
 		this._agents.set(chat.id, agent);
 		return agent;
@@ -287,6 +314,7 @@ class AgentManager {
 		private readonly _agentTools: AgentTools,
 		private readonly _toolContext: ToolContext,
 		stopWhen: StopCondition<AgentTools>[] = [hasToolCall('suggest_follow_ups'), hasToolCall('clarification')],
+		private readonly _systemPromptOverride?: string,
 	) {
 		this._agent = new ToolLoopAgent({
 			model: this._modelConfig.model,
@@ -450,21 +478,7 @@ class AgentManager {
 		const uiMessagesWithCompaction = compactionService.useLastCompaction(uiMessagesWithDbContext);
 		const uiMessagesWithResolvedImages = await resolveImageUrls(uiMessagesWithCompaction);
 
-		const memories = await memoryService.safeGetUserMemories(this.chat.userId, this.chat.projectId, this.chat.id);
-		const userRules = getUserRules(this._toolContext.projectFolder);
-		const connections = getConnections(this._toolContext.projectFolder);
-		const skills = skillService.getSkills();
-		const basePrompt = renderToMarkdown(
-			SystemPrompt({ memories, userRules, connections, skills, timezone, testMode: this.chat.testMode }),
-		);
-		const renderedPrompt = provider
-			? renderToMarkdown(MessagingProviderSystemPrompt({ basePrompt, provider, chatUrl }))
-			: basePrompt;
-		const systemPrompt = this.chat.forkMetadata
-			? renderToMarkdown(
-					ChatForkContextPrompt({ basePrompt: renderedPrompt, forkMetadata: this.chat.forkMetadata }),
-				)
-			: renderedPrompt;
+		const systemPrompt = this._systemPromptOverride ?? (await this._buildSystemPrompt(provider, timezone, chatUrl));
 
 		const systemMessage: Omit<UIMessage, 'id'> = {
 			role: 'system',
@@ -479,6 +493,25 @@ class AgentManager {
 		);
 
 		return modelMessages;
+	}
+
+	/** Builds the standard system prompt (instructions + user rules + memories + connections). */
+	private async _buildSystemPrompt(provider?: Provider, timezone?: string, chatUrl?: string): Promise<string> {
+		const memories = await memoryService.safeGetUserMemories(this.chat.userId, this.chat.projectId, this.chat.id);
+		const userRules = getUserRules(this._toolContext.projectFolder);
+		const connections = getConnections(this._toolContext.projectFolder);
+		const skills = skillService.getSkills();
+		const basePrompt = renderToMarkdown(
+			SystemPrompt({ memories, userRules, connections, skills, timezone, testMode: this.chat.testMode }),
+		);
+		const renderedPrompt = provider
+			? renderToMarkdown(MessagingProviderSystemPrompt({ basePrompt, provider, chatUrl }))
+			: basePrompt;
+		return this.chat.forkMetadata
+			? renderToMarkdown(
+					ChatForkContextPrompt({ basePrompt: renderedPrompt, forkMetadata: this.chat.forkMetadata }),
+				)
+			: renderedPrompt;
 	}
 
 	/**

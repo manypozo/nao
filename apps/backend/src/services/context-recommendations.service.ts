@@ -1,9 +1,11 @@
 import { LlmSelectedModel } from '@nao/shared/types';
 import { readUIMessageStream, UIMessage } from 'ai';
-import { and, desc, eq, gte, isNotNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, isNotNull } from 'drizzle-orm';
 
+import { getTools } from '../agents/tools';
 import { createQueryAppDbTool } from '../agents/tools/query-app-db';
 import { createRecommendationCollector } from '../agents/tools/record-recommendation';
+import { renderContextRecommendationsPrompt, renderContextRecommendationsSystemPrompt } from '../components/ai';
 import s, { DBContextRecommendation, NewContextRecommendation } from '../db/abstractSchema';
 import { db } from '../db/db';
 import * as chatQueries from '../queries/chat.queries';
@@ -12,8 +14,7 @@ import * as projectQueries from '../queries/project.queries';
 import { AgentSettings } from '../types/agent-settings';
 import { logger } from '../utils/logger';
 import { agentService } from './agent';
-import { buildMethodologyPrompt } from './context-recommendations.prompt';
-import { ExistingRecommendation, reconcile, ReconcileAction, WindowTotals } from './context-recommendations.reconcile';
+import { ExistingRecommendation, reconcile, ReconcileAction } from './context-recommendations.reconcile';
 
 const DEFAULT_LOOKBACK_DAYS = 90;
 const IMPACT_FLOOR = 5;
@@ -21,48 +22,58 @@ const ANALYSIS_STEP_BUDGET = 40;
 
 export async function runContextRecommendations(
 	projectId: string,
-	window?: { start?: Date; end?: Date },
+	options?: { trigger?: 'schedule' | 'manual'; period?: { start?: Date; end?: Date } },
 ): Promise<{ runId: string }> {
+	const period = options?.period;
 	const now = new Date();
-	const windowEnd = window?.end ?? now;
-	const windowStart = window?.start ?? (await resolveWindowStart(projectId, windowEnd));
-
-	const agentSettings = await projectQueries.getAgentSettings(projectId);
-	const modelSelection = resolveModel(agentSettings);
+	const periodEnd = period?.end ?? now;
+	const periodStart = period?.start ?? (await resolvePeriodStart(projectId, periodEnd));
 
 	const run = await crQueries.createRun({
 		projectId,
-		trigger: 'schedule',
-		windowStart,
-		windowEnd,
-		llmProvider: modelSelection?.provider,
-		llmModelId: modelSelection?.modelId,
+		trigger: options?.trigger ?? 'schedule',
+		windowStart: periodStart,
+		windowEnd: periodEnd,
 	});
 
 	try {
+		const agentSettings = await projectQueries.getAgentSettings(projectId);
+		const model = await agentService.resolveModelSelection(projectId, resolveConfiguredModel(agentSettings));
+
 		const existing = await crQueries.getActiveRecommendations(projectId);
 		const dismissedFingerprints = await crQueries.getDismissedFingerprints(projectId);
-		const totals = await computeWindowTotals(projectId, windowStart, windowEnd);
+		const totals = await crQueries.getWindowTotals(projectId, periodStart, periodEnd);
 
-		const userId = await firstProjectUserId(projectId);
+		const userId = await crQueries.getFirstProjectAdminUserId(projectId);
 		const [chat] = await chatQueries.createChat(
 			{ title: 'Context recommendations run', userId, projectId },
-			{ text: buildMethodologyPrompt({ windowStart, windowEnd, existing }), source: 'web' },
+			{
+				text: renderContextRecommendationsPrompt({ windowStart: periodStart, windowEnd: periodEnd, existing }),
+				source: 'web',
+			},
 		);
+		await crQueries.setRunChat(run.id, chat.id);
+
 		const [uiChat] = await chatQueries.getChat(chat.id);
 		if (!uiChat) {
 			throw new Error(`Failed to load run chat ${chat.id}`);
 		}
 
 		const collector = createRecommendationCollector();
-		const agent = await agentService.create({ ...uiChat, id: chat.id, projectId, userId }, modelSelection, {
+		const agent = await agentService.create({ ...uiChat, id: chat.id, projectId, userId }, model, {
 			excludeFollowUps: true,
 			maxSteps: ANALYSIS_STEP_BUDGET,
-			extraTools: {
-				query_app_db: createQueryAppDbTool(projectId),
-				record_recommendation: collector.recordTool,
-				resolve_recommendation: collector.resolveTool,
-			},
+			systemPrompt: renderContextRecommendationsSystemPrompt(),
+			tools: ({ agentSettings }) =>
+				getTools(
+					agentSettings,
+					{
+						query_app_db: createQueryAppDbTool(projectId),
+						record_recommendation: collector.recordTool,
+						resolve_recommendation: collector.resolveTool,
+					},
+					{ excludeFollowUps: true, builtinToolAllowlist: ['read', 'grep', 'list', 'search'] },
+				),
 		});
 
 		const stream = agent.stream(uiChat.messages ?? [], {});
@@ -80,9 +91,14 @@ export async function runContextRecommendations(
 			now,
 		});
 
+		const tokens = await crQueries.getChatTokenTotals(chat.id);
 		await db.transaction(async (tx) => {
-			await applyActions({ projectId, runId: run.id, model: modelSelection, actions, existing }, tx);
-			await crQueries.completeRun(run.id, {}, tx);
+			await applyActions({ projectId, runId: run.id, model, actions, existing }, tx);
+			await crQueries.completeRun(
+				run.id,
+				{ ...tokens, llmProvider: model.provider, llmModelId: model.modelId },
+				tx,
+			);
 		});
 		return { runId: run.id };
 	} catch (err) {
@@ -105,15 +121,15 @@ export async function runContextRecommendationsForAllProjects(): Promise<void> {
 	}
 }
 
-function resolveModel(agentSettings: AgentSettings | null): LlmSelectedModel | undefined {
+function resolveConfiguredModel(agentSettings: AgentSettings | null): LlmSelectedModel | undefined {
 	const cfg = agentSettings?.contextRecommendations;
 	if (cfg?.modelProvider && cfg?.modelId) {
 		return { provider: cfg.modelProvider, modelId: cfg.modelId };
 	}
-	return undefined; // agentService.create resolves the project default
+	return undefined; // agentService resolves the project default
 }
 
-async function resolveWindowStart(projectId: string, end: Date): Promise<Date> {
+async function resolvePeriodStart(projectId: string, end: Date): Promise<Date> {
 	const [last] = await db
 		.select({ completedAt: s.contextRecommendationRun.completedAt })
 		.from(s.contextRecommendationRun)
@@ -132,55 +148,6 @@ async function resolveWindowStart(projectId: string, end: Date): Promise<Date> {
 	return new Date(end.getTime() - DEFAULT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
 }
 
-async function computeWindowTotals(projectId: string, start: Date, end: Date): Promise<WindowTotals> {
-	const [errors] = await db
-		.select({ n: sql<number>`count(*)` })
-		.from(s.messagePart)
-		.innerJoin(s.chatMessage, eq(s.chatMessage.id, s.messagePart.messageId))
-		.innerJoin(s.chat, eq(s.chat.id, s.chatMessage.chatId))
-		.where(
-			and(
-				eq(s.chat.projectId, projectId),
-				eq(s.messagePart.toolState, 'output-error'),
-				gte(s.messagePart.createdAt, start),
-				lt(s.messagePart.createdAt, end),
-			),
-		)
-		.execute();
-	const [downvotes] = await db
-		.select({ n: sql<number>`count(*)` })
-		.from(s.messageFeedback)
-		.innerJoin(s.chatMessage, eq(s.chatMessage.id, s.messageFeedback.messageId))
-		.innerJoin(s.chat, eq(s.chat.id, s.chatMessage.chatId))
-		.where(
-			and(
-				eq(s.chat.projectId, projectId),
-				eq(s.messageFeedback.vote, 'down'),
-				gte(s.messageFeedback.createdAt, start),
-				lt(s.messageFeedback.createdAt, end),
-			),
-		)
-		.execute();
-	const [regenerations] = await db
-		.select({ n: sql<number>`count(*)` })
-		.from(s.chatMessage)
-		.innerJoin(s.chat, eq(s.chat.id, s.chatMessage.chatId))
-		.where(
-			and(
-				eq(s.chat.projectId, projectId),
-				isNotNull(s.chatMessage.supersededAt),
-				gte(s.chatMessage.createdAt, start),
-				lt(s.chatMessage.createdAt, end),
-			),
-		)
-		.execute();
-	return {
-		errors: Number(errors?.n ?? 0),
-		downvotes: Number(downvotes?.n ?? 0),
-		regenerations: Number(regenerations?.n ?? 0),
-	};
-}
-
 function toExistingRec(r: DBContextRecommendation): ExistingRecommendation {
 	return {
 		id: r.id,
@@ -195,7 +162,7 @@ async function applyActions(
 	args: {
 		projectId: string;
 		runId: string;
-		model: LlmSelectedModel | undefined;
+		model: LlmSelectedModel;
 		actions: ReconcileAction[];
 		existing: DBContextRecommendation[];
 	},
@@ -218,8 +185,8 @@ async function applyActions(
 					title: action.finding.title,
 					summary: action.finding.summary,
 					suggestedAction: action.finding.suggestedAction,
-					llmProvider: args.model?.provider,
-					llmModelId: args.model?.modelId,
+					llmProvider: args.model.provider,
+					llmModelId: args.model.modelId,
 				},
 				executor,
 			);
@@ -235,8 +202,8 @@ async function applyActions(
 				summary: action.finding.summary,
 				suggestedAction: action.finding.suggestedAction,
 				occurrenceCount: (prev?.occurrenceCount ?? 1) + 1,
-				llmProvider: args.model?.provider ?? null,
-				llmModelId: args.model?.modelId ?? null,
+				llmProvider: args.model.provider,
+				llmModelId: args.model.modelId,
 			};
 			if (action.reopen) {
 				patch.status = 'open';
@@ -250,17 +217,4 @@ async function applyActions(
 			);
 		}
 	}
-}
-
-async function firstProjectUserId(projectId: string): Promise<string> {
-	const [member] = await db
-		.select({ userId: s.projectMember.userId })
-		.from(s.projectMember)
-		.where(eq(s.projectMember.projectId, projectId))
-		.limit(1)
-		.execute();
-	if (!member) {
-		throw new Error(`No user found for project ${projectId}`);
-	}
-	return member.userId;
 }

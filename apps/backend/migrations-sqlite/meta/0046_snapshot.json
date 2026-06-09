@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "cc681dc7-e404-4cf9-8ef7-15ddf33fd4b9",
+  "id": "32ac7f9b-7e70-459b-912c-25fad9f03714",
   "prevId": "20b66767-2537-488f-a074-4976d30c5abc",
   "tables": {
     "account": {
@@ -1226,7 +1226,7 @@
           "name": "run_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false,
+          "notNull": true,
           "autoincrement": false
         },
         "fingerprint": {
@@ -1417,19 +1417,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "context_recommendation_run_id_context_recommendation_run_id_fk": {
-          "name": "context_recommendation_run_id_context_recommendation_run_id_fk",
-          "tableFrom": "context_recommendation",
-          "tableTo": "context_recommendation_run",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "context_recommendation_status_changed_by_user_id_fk": {
           "name": "context_recommendation_status_changed_by_user_id_fk",
           "tableFrom": "context_recommendation",
@@ -1441,6 +1428,21 @@
             "id"
           ],
           "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "context_recommendation_run_fk": {
+          "name": "context_recommendation_run_fk",
+          "tableFrom": "context_recommendation",
+          "tableTo": "context_recommendation_run",
+          "columnsFrom": [
+            "run_id",
+            "project_id"
+          ],
+          "columnsTo": [
+            "id",
+            "project_id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -1463,6 +1465,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "chat_id": {
+          "name": "chat_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "trigger": {
@@ -1561,12 +1570,27 @@
           ],
           "isUnique": false
         },
+        "context_recommendation_run_chatId_idx": {
+          "name": "context_recommendation_run_chatId_idx",
+          "columns": [
+            "chat_id"
+          ],
+          "isUnique": false
+        },
         "context_recommendation_run_status_idx": {
           "name": "context_recommendation_run_status_idx",
           "columns": [
             "status"
           ],
           "isUnique": false
+        },
+        "context_recommendation_run_id_project_unique": {
+          "name": "context_recommendation_run_id_project_unique",
+          "columns": [
+            "id",
+            "project_id"
+          ],
+          "isUnique": true
         }
       },
       "foreignKeys": {
@@ -1581,6 +1605,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "context_recommendation_run_chat_id_chat_id_fk": {
+          "name": "context_recommendation_run_chat_id_chat_id_fk",
+          "tableFrom": "context_recommendation_run",
+          "tableTo": "chat",
+          "columnsFrom": [
+            "chat_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
