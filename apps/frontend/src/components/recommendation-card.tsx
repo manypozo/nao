@@ -1,6 +1,6 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ExternalLink, GitPullRequest, Loader2, ScrollText, Wand2 } from 'lucide-react';
+import { ExternalLink, GitMerge, GitPullRequest, GitPullRequestClosed, Loader2, ScrollText, Wand2 } from 'lucide-react';
 import type { inferRouterOutputs } from '@trpc/server';
 
 import type { TrpcRouter } from '@nao/backend/trpc';
@@ -53,6 +53,12 @@ export function RecommendationCard({ recommendation: rec, onChangeStatus, isPend
 			},
 		}),
 	);
+
+	const prStatus = useQuery({
+		...trpc.contextRecommendation.getPrStatus.queryOptions({ id: rec.id }),
+		enabled: !!rec.prUrl,
+		staleTime: 30_000,
+	});
 
 	const edits = rec.proposedEdits ?? [];
 	const hasPatch = rec.fixKind === 'patch' && edits.length > 0;
@@ -116,12 +122,15 @@ export function RecommendationCard({ recommendation: rec, onChangeStatus, isPend
 									Show diff
 								</Button>
 								{rec.prUrl ? (
-									<Button size='sm' variant='outline' asChild>
-										<a href={rec.prUrl} target='_blank' rel='noopener noreferrer'>
-											<ExternalLink className='size-3.5' />
-											View PR
-										</a>
-									</Button>
+									<>
+										<Button size='sm' variant='outline' asChild>
+											<a href={rec.prUrl} target='_blank' rel='noopener noreferrer'>
+												<ExternalLink className='size-3.5' />
+												View PR
+											</a>
+										</Button>
+										<PrStatusBadge state={prStatus.data?.state} />
+									</>
 								) : (
 									<Button
 										size='sm'
@@ -202,5 +211,35 @@ export function RecommendationCard({ recommendation: rec, onChangeStatus, isPend
 				</div>
 			</CardContent>
 		</Card>
+	);
+}
+
+type PrState = 'open' | 'closed' | 'merged';
+
+function PrStatusBadge({ state }: { state: PrState | undefined }) {
+	if (!state) {
+		return null;
+	}
+	if (state === 'merged') {
+		return (
+			<Badge className='bg-purple-500/15 text-purple-600 dark:text-purple-400'>
+				<GitMerge className='size-3' />
+				Merged
+			</Badge>
+		);
+	}
+	if (state === 'closed') {
+		return (
+			<Badge className='bg-red-500/15 text-red-600 dark:text-red-400'>
+				<GitPullRequestClosed className='size-3' />
+				Closed
+			</Badge>
+		);
+	}
+	return (
+		<Badge className='bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'>
+			<GitPullRequest className='size-3' />
+			Open
+		</Badge>
 	);
 }

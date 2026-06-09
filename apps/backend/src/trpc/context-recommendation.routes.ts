@@ -6,8 +6,10 @@ import { env } from '../env';
 import { ensureContextRecommendationsSchedule } from '../handlers/context-recommendations.handler';
 import * as crQueries from '../queries/context-recommendation.queries';
 import { getAgentSettings, updateAgentSettings } from '../queries/project.queries';
+import * as userQueries from '../queries/user.queries';
 import { createRecommendationPullRequest } from '../services/context-pr.service';
 import { runContextRecommendations } from '../services/context-recommendations.service';
+import * as github from '../services/github';
 import { CONTEXT_RECOMMENDATION_FREQUENCIES, CONTEXT_RECOMMENDATION_STATUSES } from '../types/context-recommendation';
 import { getProjectAvailableModels } from '../utils/llm';
 import { logger } from '../utils/logger';
@@ -84,6 +86,30 @@ export const contextRecommendationRoutes = {
 				userId: ctx.user.id,
 			});
 		}),
+
+	getPrStatus: recommendationsProcedure.input(z.object({ id: z.string() })).query(async ({ ctx, input }) => {
+		const rec = await crQueries.getRecommendationById(ctx.project.id, input.id);
+		if (!rec?.prUrl) {
+			return null;
+		}
+		const parsed = github.parsePullRequestUrl(rec.prUrl);
+		if (!parsed) {
+			return null;
+		}
+		const token = await userQueries.getGithubToken(ctx.user.id);
+		if (!token) {
+			return null;
+		}
+		try {
+			const pr = await github.getPullRequest(token, parsed.repo, parsed.number);
+			return { state: pr.state, mergedAt: pr.merged_at, htmlUrl: pr.html_url };
+		} catch (err) {
+			logger.warn(`Failed to fetch PR status for recommendation ${input.id}: ${String(err)}`, {
+				source: 'agent',
+			});
+			return null;
+		}
+	}),
 
 	createPullRequest: recommendationsProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {
 		try {
