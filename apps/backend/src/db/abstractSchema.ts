@@ -121,4 +121,13 @@ export type ScheduledJobStatus = DBScheduledJob['status'];
 export type DBBrandingConfig = typeof sqliteSchema.brandingConfig.$inferSelect;
 export type NewBrandingConfig = typeof sqliteSchema.brandingConfig.$inferInsert;
 
+export type DBFavorite = typeof sqliteSchema.favorite.$inferSelect;
+export type NewFavorite = typeof sqliteSchema.favorite.$inferInsert;
+
+export type DBStoryFolder = typeof sqliteSchema.storyFolder.$inferSelect;
+export type NewStoryFolder = typeof sqliteSchema.storyFolder.$inferInsert;
+
+export type DBStoryFolderItem = typeof sqliteSchema.storyFolderItem.$inferSelect;
+export type NewStoryFolderItem = typeof sqliteSchema.storyFolderItem.$inferInsert;
+
 export default allSchema as typeof sqliteSchema;

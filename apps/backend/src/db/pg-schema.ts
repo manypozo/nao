@@ -1,9 +1,10 @@
 import type { McpChartEmbedStoredConfig } from '@nao/shared';
 import type { CitationData, LlmProvider } from '@nao/shared/types';
-import { BUDGET_PERIODS, SHARE_VISIBILITY, USER_ROLES } from '@nao/shared/types';
+import { BUDGET_PERIODS, FOLDER_SYSTEM_TYPE, FOLDER_VISIBILITY, SHARE_VISIBILITY, USER_ROLES } from '@nao/shared/types';
 import { type ProviderMetadata } from 'ai';
 import { sql } from 'drizzle-orm';
 import {
+	type AnyPgColumn,
 	boolean,
 	check,
 	foreignKey,
@@ -474,9 +475,14 @@ export const sharedStory = pgTable(
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' }),
 		visibility: text('visibility', { enum: SHARE_VISIBILITY }).default('project').notNull(),
+		isPinned: boolean('is_pinned').default(false).notNull(),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 	},
-	(t) => [index('shared_story_projectId_idx').on(t.projectId), index('shared_story_storyId_idx').on(t.storyId)],
+	(t) => [
+		index('shared_story_projectId_idx').on(t.projectId),
+		index('shared_story_storyId_idx').on(t.storyId),
+		uniqueIndex('shared_story_project_story_unique').on(t.projectId, t.storyId),
+	],
 );
 
 export const sharedStoryAccess = pgTable(
@@ -1113,3 +1119,70 @@ export const jwks = pgTable('jwks', {
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	expiresAt: timestamp('expires_at'),
 });
+
+export const favorite = pgTable(
+	'favorite',
+	{
+		id: text('id')
+			.$defaultFn(() => crypto.randomUUID())
+			.primaryKey(),
+		userId: text('user_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		storyId: text('story_id').references(() => story.id, { onDelete: 'cascade' }),
+		folderId: text('folder_id').references((): AnyPgColumn => storyFolder.id, { onDelete: 'cascade' }),
+		createdAt: timestamp('created_at').defaultNow().notNull(),
+	},
+	(t) => [
+		check('favorite_xor_target', sql`(${t.storyId} IS NOT NULL)::int + (${t.folderId} IS NOT NULL)::int = 1`),
+		unique('favorite_user_id_story_id_unique').on(t.userId, t.storyId),
+		unique('favorite_user_id_folder_id_unique').on(t.userId, t.folderId),
+		index('favorite_user_id_idx').on(t.userId),
+	],
+);
+
+export const storyFolder = pgTable(
+	'story_folder',
+	{
+		id: text('id')
+			.$defaultFn(() => crypto.randomUUID())
+			.primaryKey(),
+		ownerId: text('owner_id')
+			.notNull()
+			.references(() => user.id, { onDelete: 'cascade' }),
+		projectId: text('project_id')
+			.notNull()
+			.references(() => project.id, { onDelete: 'cascade' }),
+		parentId: text('parent_id').references((): AnyPgColumn => storyFolder.id, { onDelete: 'set null' }),
+		name: text('name').notNull(),
+		visibility: text('visibility', { enum: FOLDER_VISIBILITY }).default('public').notNull(),
+		systemType: text('system_type', { enum: FOLDER_SYSTEM_TYPE }),
+		archivedAt: timestamp('archived_at'),
+		createdAt: timestamp('created_at').defaultNow().notNull(),
+		updatedAt: timestamp('updated_at')
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull(),
+	},
+	(t) => [
+		uniqueIndex('story_folder_private_root_unique')
+			.on(t.projectId, t.ownerId)
+			.where(sql`${t.systemType} = 'private_folder'`),
+		index('story_folder_ownerProjectParent_idx').on(t.ownerId, t.projectId, t.parentId),
+		index('story_folder_projectId_idx').on(t.projectId),
+	],
+);
+
+export const storyFolderItem = pgTable(
+	'story_folder_item',
+	{
+		storyId: text('story_id')
+			.notNull()
+			.references(() => story.id, { onDelete: 'cascade' })
+			.primaryKey(),
+		folderId: text('folder_id')
+			.notNull()
+			.references(() => storyFolder.id, { onDelete: 'cascade' }),
+	},
+	(t) => [index('story_folder_item_folderId_idx').on(t.folderId)],
+);
