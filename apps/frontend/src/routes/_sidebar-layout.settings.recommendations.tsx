@@ -13,6 +13,7 @@ import { LlmProviderIcon } from '@/components/ui/llm-provider-icon';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { SettingsCard, SettingsPageWrapper } from '@/components/ui/settings-card';
 import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 import { SidePanelProvider } from '@/contexts/side-panel';
 import { useSidePanel } from '@/hooks/use-side-panel';
 import { requireAdmin } from '@/lib/require-admin';
@@ -32,6 +33,9 @@ const FREQUENCY_OPTIONS = [
 ] as const;
 
 type Frequency = (typeof FREQUENCY_OPTIONS)[number]['value'];
+
+const MAX_AUTO_PR_OPTIONS = [1, 2, 3, 5, 10] as const;
+const DEFAULT_MAX_AUTO_PRS = 3;
 
 /** The job runs at 03:00 UTC; render that moment in the viewer's local timezone (display only). */
 function localRunTime(): string {
@@ -99,6 +103,19 @@ function RecommendationsPage() {
 
 	const handleFrequencyChange = async (value: string) => {
 		await setConfig.mutateAsync({ frequency: value as Frequency });
+		queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.getConfig.queryKey() });
+	};
+
+	const yoloEnabled = config.data?.autoCreatePrs === true;
+	const maxAutoPrs = config.data?.maxAutoPrsPerRun ?? DEFAULT_MAX_AUTO_PRS;
+
+	const handleYoloChange = async (checked: boolean) => {
+		await setConfig.mutateAsync({ autoCreatePrs: checked });
+		queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.getConfig.queryKey() });
+	};
+
+	const handleMaxAutoPrsChange = async (value: string) => {
+		await setConfig.mutateAsync({ maxAutoPrsPerRun: Number(value) });
 		queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.getConfig.queryKey() });
 	};
 
@@ -216,6 +233,50 @@ function RecommendationsPage() {
 									</Select>
 								</div>
 							</div>
+
+							<div className='flex items-center justify-between gap-4'>
+								<div>
+									<div className='text-sm'>YOLO mode</div>
+									<div className='text-xs text-muted-foreground'>
+										Open pull requests automatically after each run, without human review.
+										Recommendations with a PR are marked as applied.
+									</div>
+								</div>
+								<Switch
+									checked={yoloEnabled}
+									onCheckedChange={handleYoloChange}
+									disabled={setConfig.isPending}
+								/>
+							</div>
+
+							{yoloEnabled && (
+								<div className='flex items-center justify-between gap-4'>
+									<div>
+										<div className='text-sm'>Max pull requests per run</div>
+										<div className='text-xs text-muted-foreground'>
+											Highest-impact recommendations go first
+										</div>
+									</div>
+									<div className='w-72'>
+										<Select
+											value={String(maxAutoPrs)}
+											onValueChange={handleMaxAutoPrsChange}
+											disabled={setConfig.isPending}
+										>
+											<SelectTrigger className='w-full'>
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												{MAX_AUTO_PR_OPTIONS.map((n) => (
+													<SelectItem key={n} value={String(n)}>
+														{n === 1 ? '1 pull request' : `${n} pull requests`}
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+									</div>
+								</div>
+							)}
 						</div>
 					</SettingsCard>
 

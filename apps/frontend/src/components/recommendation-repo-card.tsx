@@ -13,33 +13,59 @@ import {
 	AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from '@/components/ui/dialog';
+import { GithubRepoList } from '@/components/settings/github-repo-list';
 import { SettingsCard } from '@/components/ui/settings-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Spinner } from '@/components/ui/spinner';
 import { trpc } from '@/main';
 
 const RETURN_TO = '/settings/recommendations';
 
 /**
- * Surfaces the GitHub link state that gates automatic PR drafting: the analysis run
- * only proposes file changes when the project is connected to a GitHub repository.
+ * Surfaces the repository that gates automatic PR drafting. The project's own GitHub
+ * remote is used when present; otherwise admins can pick any repository here — useful
+ * when the context is deployed via `nao deploy` or a mounted volume instead of a clone.
  */
 export function RecommendationRepoCard() {
 	const queryClient = useQueryClient();
 	const [confirmUnlink, setConfirmUnlink] = useState(false);
+	const [pickerOpen, setPickerOpen] = useState(false);
 	const available = useQuery(trpc.github.isAvailable.queryOptions());
 	const status = useQuery({
 		...trpc.github.getStatus.queryOptions(),
 		enabled: available.data === true,
 	});
-	const gitInfo = useQuery({
-		...trpc.github.getProjectGitInfo.queryOptions(),
+	const repo = useQuery({
+		...trpc.contextRecommendation.getRepo.queryOptions(),
 		staleTime: 30_000,
 	});
+
+	const invalidateRepo = () => {
+		queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.getRepo.queryKey() });
+	};
+
 	const unlink = useMutation(
 		trpc.github.unlinkProject.mutationOptions({
 			onSuccess: () => {
 				setConfirmUnlink(false);
+				invalidateRepo();
 				queryClient.invalidateQueries({ queryKey: trpc.github.getProjectGitInfo.queryKey() });
+			},
+		}),
+	);
+	const setRepo = useMutation(
+		trpc.contextRecommendation.setRepo.mutationOptions({
+			onSuccess: () => {
+				setPickerOpen(false);
+				invalidateRepo();
 			},
 		}),
 	);
@@ -48,7 +74,7 @@ export function RecommendationRepoCard() {
 		return null;
 	}
 
-	if (available.isLoading || status.isLoading || gitInfo.isLoading) {
+	if (available.isLoading || status.isLoading || repo.isLoading) {
 		return (
 			<SettingsCard title='Repository' icon={<Github className='size-4' />}>
 				<Skeleton className='h-4 w-48' />
@@ -57,8 +83,6 @@ export function RecommendationRepoCard() {
 	}
 
 	const connected = status.data?.connected === true;
-	const repo = gitInfo.data;
-	const repoLinked = repo?.isGithub === true;
 
 	if (!connected) {
 		return (
@@ -77,24 +101,39 @@ export function RecommendationRepoCard() {
 		);
 	}
 
-	if (!repoLinked || !repo) {
+	if (!repo.data) {
 		return (
-			<SettingsCard title='Repository' icon={<Github className='size-4' />}>
-				<p className='text-sm text-muted-foreground'>
-					GitHub is connected, but this project is not linked to a repository. Import the project from GitHub
-					to enable automatic pull requests.
-				</p>
+			<SettingsCard
+				title='Repository'
+				icon={<Github className='size-4' />}
+				description='This project is not linked to a GitHub repository. Select the repository that holds your context files so nao can open pull requests against it.'
+			>
+				<Button size='sm' onClick={() => setPickerOpen(true)}>
+					<Github className='size-3.5' />
+					Select repository
+				</Button>
+				<RepoPickerDialog
+					open={pickerOpen}
+					onOpenChange={setPickerOpen}
+					onConfirm={(repoFullName) => setRepo.mutate({ repoFullName })}
+					isPending={setRepo.isPending}
+					error={setRepo.error?.message}
+				/>
 			</SettingsCard>
 		);
 	}
 
-	const { repoFullName, branch } = repo;
+	const { repoFullName, branch, source } = repo.data;
 
 	return (
 		<SettingsCard
 			title='Repository'
 			icon={<Github className='size-4' />}
-			description='Connected. New high-impact recommendations include drafted changes you can open as a pull request.'
+			description={
+				source === 'project'
+					? 'Connected. New high-impact recommendations include drafted changes you can open as a pull request.'
+					: 'Pull requests with drafted context changes are opened against this repository. Project files are not synced from it.'
+			}
 		>
 			<div className='flex items-center justify-between gap-2 text-sm'>
 				<div className='flex items-center gap-2'>
@@ -113,11 +152,39 @@ export function RecommendationRepoCard() {
 						</span>
 					)}
 				</div>
-				<Button size='sm' variant='outline' onClick={() => setConfirmUnlink(true)}>
-					<Unlink className='size-3.5' />
-					Unattach
-				</Button>
+				{source === 'project' ? (
+					<Button size='sm' variant='outline' onClick={() => setConfirmUnlink(true)}>
+						<Unlink className='size-3.5' />
+						Unattach
+					</Button>
+				) : (
+					<div className='flex items-center gap-2'>
+						<Button size='sm' variant='outline' onClick={() => setPickerOpen(true)}>
+							Change
+						</Button>
+						<Button
+							size='sm'
+							variant='outline'
+							onClick={() => setRepo.mutate({ repoFullName: null })}
+							disabled={setRepo.isPending}
+						>
+							{setRepo.isPending ? <Spinner className='size-3.5' /> : <Unlink className='size-3.5' />}
+							Remove
+						</Button>
+					</div>
+				)}
 			</div>
+			{source !== 'project' && setRepo.error && (
+				<p className='text-sm text-destructive'>{setRepo.error.message}</p>
+			)}
+
+			<RepoPickerDialog
+				open={pickerOpen}
+				onOpenChange={setPickerOpen}
+				onConfirm={(name) => setRepo.mutate({ repoFullName: name })}
+				isPending={setRepo.isPending}
+				error={setRepo.error?.message}
+			/>
 
 			<AlertDialog open={confirmUnlink} onOpenChange={setConfirmUnlink}>
 				<AlertDialogContent>
@@ -146,5 +213,47 @@ export function RecommendationRepoCard() {
 				</AlertDialogContent>
 			</AlertDialog>
 		</SettingsCard>
+	);
+}
+
+interface RepoPickerDialogProps {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	onConfirm: (repoFullName: string) => void;
+	isPending: boolean;
+	error?: string;
+}
+
+function RepoPickerDialog({ open, onOpenChange, onConfirm, isPending, error }: RepoPickerDialogProps) {
+	const [selected, setSelected] = useState<string | null>(null);
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className='sm:max-w-lg'>
+				<DialogHeader>
+					<DialogTitle className='flex items-center gap-2'>
+						<Github className='size-5' />
+						Select repository
+					</DialogTitle>
+					<DialogDescription>
+						Pull requests with drafted context changes will be opened against this repository.
+					</DialogDescription>
+				</DialogHeader>
+
+				<GithubRepoList selected={selected} onSelect={(name) => setSelected(name === selected ? null : name)} />
+
+				{error && <p className='text-sm text-destructive'>{error}</p>}
+
+				<DialogFooter>
+					<Button variant='outline' onClick={() => onOpenChange(false)}>
+						Cancel
+					</Button>
+					<Button onClick={() => selected && onConfirm(selected)} disabled={!selected || isPending}>
+						{isPending && <Spinner className='size-4' />}
+						Use repository
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 	);
 }

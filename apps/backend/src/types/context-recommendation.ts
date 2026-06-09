@@ -12,6 +12,9 @@ export type ContextRecommendationFrequency = (typeof CONTEXT_RECOMMENDATION_FREQ
 
 export const DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY: ContextRecommendationFrequency = 'weekly';
 
+export const DEFAULT_MAX_AUTO_PRS_PER_RUN = 3;
+export const MAX_AUTO_PRS_PER_RUN = 10;
+
 /** Cron expressions for each frequency. All run at 03:00 UTC. */
 export const CONTEXT_RECOMMENDATION_FREQUENCY_CRON: Record<ContextRecommendationFrequency, string> = {
 	daily: '0 3 * * *',

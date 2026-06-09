@@ -13,15 +13,16 @@ import * as chatQueries from '../queries/chat.queries';
 import * as crQueries from '../queries/context-recommendation.queries';
 import * as projectQueries from '../queries/project.queries';
 import { AgentSettings } from '../types/agent-settings';
+import { DEFAULT_MAX_AUTO_PRS_PER_RUN } from '../types/context-recommendation';
 import { logger } from '../utils/logger';
 import { agentService } from './agent';
+import { autoCreateRecommendationPullRequests, resolveRecommendationRepo } from './context-pr.service';
 import {
 	ExistingRecommendation,
 	fingerprintFor,
 	reconcile,
 	ReconcileAction,
 } from './context-recommendations.reconcile';
-import { getGitInfo } from './github';
 
 const DEFAULT_LOOKBACK_DAYS = 90;
 const IMPACT_FLOOR = 5;
@@ -50,7 +51,7 @@ export async function runContextRecommendations(
 
 	try {
 		const project = await projectQueries.getProjectById(projectId);
-		const proposeFixes = !!project?.path && getGitInfo(project.path).isGithub;
+		const proposeFixes = !!project?.path && !!(await resolveRecommendationRepo(projectId));
 		const fixCollector = proposeFixes ? createContextFixCollector(project!.path!) : null;
 
 		const existing = await crQueries.getActiveRecommendations(projectId);
@@ -116,12 +117,20 @@ export async function runContextRecommendations(
 		const tokens = await crQueries.getChatTokenTotals(chat.id);
 		await db.transaction(async (tx) => {
 			await applyActions({ projectId, runId: run.id, model, actions, existing, fixCollector }, tx);
-			await crQueries.completeRun(
-				run.id,
-				{ ...tokens, llmProvider: model.provider, llmModelId: model.modelId },
-				tx,
-			);
 		});
+
+		// YOLO mode: open PRs for the top recommendations before the run is marked
+		// completed, so the UI refresh at completion already shows them as applied.
+		const crConfig = agentSettings?.contextRecommendations;
+		if (proposeFixes && crConfig?.autoCreatePrs) {
+			await autoCreateRecommendationPullRequests(
+				projectId,
+				userId,
+				crConfig.maxAutoPrsPerRun ?? DEFAULT_MAX_AUTO_PRS_PER_RUN,
+			);
+		}
+
+		await crQueries.completeRun(run.id, { ...tokens, llmProvider: model.provider, llmModelId: model.modelId });
 		return { runId: run.id };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);

@@ -7,10 +7,14 @@ import { ensureContextRecommendationsSchedule } from '../handlers/context-recomm
 import * as crQueries from '../queries/context-recommendation.queries';
 import { getAgentSettings, updateAgentSettings } from '../queries/project.queries';
 import * as userQueries from '../queries/user.queries';
-import { createRecommendationPullRequest } from '../services/context-pr.service';
+import { createRecommendationPullRequest, resolveRecommendationRepo } from '../services/context-pr.service';
 import { runContextRecommendations } from '../services/context-recommendations.service';
 import * as github from '../services/github';
-import { CONTEXT_RECOMMENDATION_FREQUENCIES, CONTEXT_RECOMMENDATION_STATUSES } from '../types/context-recommendation';
+import {
+	CONTEXT_RECOMMENDATION_FREQUENCIES,
+	CONTEXT_RECOMMENDATION_STATUSES,
+	MAX_AUTO_PRS_PER_RUN,
+} from '../types/context-recommendation';
 import { getProjectAvailableModels } from '../utils/llm';
 import { logger } from '../utils/logger';
 import { adminProtectedProcedure } from './trpc';
@@ -53,20 +57,43 @@ export const contextRecommendationRoutes = {
 				modelProvider: z.enum(LLM_PROVIDERS).optional(),
 				modelId: z.string().optional(),
 				frequency: z.enum(CONTEXT_RECOMMENDATION_FREQUENCIES).optional(),
+				autoCreatePrs: z.boolean().optional(),
+				maxAutoPrsPerRun: z.number().int().min(1).max(MAX_AUTO_PRS_PER_RUN).optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
 			const current = (await getAgentSettings(ctx.project.id))?.contextRecommendations;
 			await updateAgentSettings(ctx.project.id, {
 				contextRecommendations: {
+					...current,
 					modelProvider: input.modelProvider ?? current?.modelProvider,
 					modelId: input.modelId ?? current?.modelId,
 					frequency: input.frequency ?? current?.frequency,
+					autoCreatePrs: input.autoCreatePrs ?? current?.autoCreatePrs,
+					maxAutoPrsPerRun: input.maxAutoPrsPerRun ?? current?.maxAutoPrsPerRun,
 				},
 			});
 			if (input.frequency) {
 				await ensureContextRecommendationsSchedule(input.frequency, { reset: true });
 			}
+		}),
+
+	getRepo: recommendationsProcedure.query(async ({ ctx }) => resolveRecommendationRepo(ctx.project.id)),
+
+	setRepo: recommendationsProcedure
+		.input(
+			z.object({
+				repoFullName: z
+					.string()
+					.regex(/^[\w.-]+\/[\w.-]+$/, 'Expected a repository in "owner/name" format')
+					.nullable(),
+			}),
+		)
+		.mutation(async ({ ctx, input }) => {
+			const current = (await getAgentSettings(ctx.project.id))?.contextRecommendations;
+			await updateAgentSettings(ctx.project.id, {
+				contextRecommendations: { ...current, repoFullName: input.repoFullName ?? undefined },
+			});
 		}),
 
 	setStatus: recommendationsProcedure

@@ -26,5 +26,10 @@ export interface AgentSettings {
 		modelProvider?: LlmProvider;
 		modelId?: string;
 		frequency?: ContextRecommendationFrequency;
+		/** Repo for context PRs when the project folder itself is not a GitHub clone (e.g. nao deploy, volume mount). */
+		repoFullName?: string;
+		/** YOLO mode: open pull requests automatically after each run, without human review. */
+		autoCreatePrs?: boolean;
+		maxAutoPrsPerRun?: number;
 	};
 }
