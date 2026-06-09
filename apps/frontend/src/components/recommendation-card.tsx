@@ -13,6 +13,7 @@ import {
 	Wand2,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { pluralize } from '@nao/shared';
 import type { inferRouterOutputs } from '@trpc/server';
 
 import type { TrpcRouter } from '@nao/backend/trpc';
@@ -30,6 +31,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSidePanel } from '@/contexts/side-panel';
+import { useRecommendationCollapsed } from '@/hooks/use-recommendation-collapsed';
 import { computeLineDiff } from '@/lib/line-diff';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/main';
@@ -73,7 +75,8 @@ export function RecommendationCard({
 	const chatIds = exampleChatIds(rec.insights);
 	const queryClient = useQueryClient();
 	const sidePanel = useSidePanel();
-	const [collapsed, setCollapsed] = useState(defaultCollapsed);
+	const [collapsed, setCollapsed] = useRecommendationCollapsed(rec.id, defaultCollapsed);
+	const [expanded, setExpanded] = useState(false);
 
 	const createPr = useMutation(
 		trpc.contextRecommendation.createPullRequest.mutationOptions({
@@ -107,7 +110,7 @@ export function RecommendationCard({
 	}, [edits, hasPatch]);
 
 	return (
-		<Card className='gap-2 py-3'>
+		<Card className='gap-0 py-3'>
 			<CardHeader>
 				<div className='flex items-start gap-2'>
 					<button
@@ -180,112 +183,124 @@ export function RecommendationCard({
 					</div>
 				</div>
 			</CardHeader>
-			{!collapsed && (
-				<CardContent className='flex flex-col gap-2 text-sm'>
-					<p className='text-muted-foreground'>{rec.summary}</p>
-					<p>
-						<span className='font-medium'>Fix:</span> {rec.suggestedAction}
-					</p>
-					<div className='flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground'>
-						<span>
-							File: <code>{rec.suggestedFile}</code>
-						</span>
-						{rec.impact && (
-							<span>
-								{rec.impact.affectedChats} chats · {Math.round(rec.impact.failureShare * 100)}% of
-								window
-							</span>
+			<div
+				className={cn(
+					'grid transition-[grid-template-rows] duration-300 ease-in-out',
+					collapsed ? 'grid-rows-[0fr]' : 'grid-rows-[1fr]',
+				)}
+			>
+				<div className='overflow-hidden'>
+					<CardContent className='flex flex-col gap-2 pt-2 text-sm'>
+						<p className={cn('text-muted-foreground', !expanded && 'line-clamp-2')}>{rec.summary}</p>
+						{expanded && (
+							<p>
+								<span className='font-medium'>Fix:</span> {rec.suggestedAction}
+							</p>
 						)}
-						{rec.llmModelId && <span>by {rec.llmModelId}</span>}
-					</div>
-					{chatIds.length > 0 && (
-						<div className='flex flex-wrap items-center gap-2 text-xs'>
-							<span className='text-muted-foreground'>Chats:</span>
-							{chatIds.slice(0, 5).map((chatId) => (
-								<Link
-									key={chatId}
-									to='/$chatId'
-									params={{ chatId }}
-									className='text-primary underline-offset-4 hover:underline'
-								>
-									{chatId.slice(0, 8)}
-								</Link>
-							))}
-						</div>
-					)}
-					{(hasPatch || hasManualFix) && (
-						<div className='flex flex-wrap items-center gap-2 rounded-md border border-dashed bg-muted/30 p-2'>
-							{hasPatch && (
-								<>
-									<span className='text-xs font-medium text-muted-foreground'>
-										nao drafted {edits.length} file change{edits.length === 1 ? '' : 's'}
+						<button
+							type='button'
+							onClick={() => setExpanded((value) => !value)}
+							className='self-start text-xs font-medium text-primary underline-offset-4 hover:underline'
+						>
+							{expanded ? 'Show less' : 'Show more'}
+						</button>
+						<div className='flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground'>
+							{rec.llmModelId && <span>Proposed by {rec.llmModelId}</span>}
+							{rec.llmModelId && chatIds.length > 0 && <span aria-hidden>•</span>}
+							{chatIds.length > 0 && (
+								<span className='flex flex-wrap items-center gap-2 text-xs'>
+									<span className='text-muted-foreground'>
+										Found in {chatIds.length} {pluralize('chat', chatIds.length)}:
 									</span>
-									<Button
-										size='sm'
-										variant='outline'
-										onClick={() =>
-											sidePanel.open(<RecommendationDiffPanel title={rec.title} edits={edits} />)
-										}
-									>
-										<ScrollText className='size-3.5' />
-										Show diff
-									</Button>
-									{rec.prUrl ? (
-										<>
-											<Button size='sm' variant='outline' asChild>
-												<a href={rec.prUrl} target='_blank' rel='noopener noreferrer'>
-													<ExternalLink className='size-3.5' />
-													View PR
-												</a>
-											</Button>
-											<PrStatusBadge state={prStatus.data?.state} />
-										</>
-									) : (
+									{chatIds.slice(0, 5).map((chatId) => (
+										<Link
+											key={chatId}
+											to='/$chatId'
+											params={{ chatId }}
+											className='text-primary underline-offset-4 hover:underline'
+										>
+											{chatId.slice(0, 8)}
+										</Link>
+									))}
+								</span>
+							)}
+						</div>
+						{(hasPatch || hasManualFix) && (
+							<div className='flex flex-wrap items-center gap-2 rounded-md border border-dashed bg-muted/30 p-2'>
+								{hasPatch && (
+									<>
+										<span className='text-xs font-medium text-muted-foreground'>
+											nao drafted {edits.length} file change{edits.length === 1 ? '' : 's'}
+										</span>
 										<Button
 											size='sm'
-											onClick={() => createPr.mutate({ id: rec.id })}
-											disabled={createPr.isPending}
+											variant='outline'
+											onClick={() =>
+												sidePanel.open(
+													<RecommendationDiffPanel title={rec.title} edits={edits} />,
+												)
+											}
 										>
-											{createPr.isPending ? (
-												<Loader2 className='size-3.5 animate-spin' />
-											) : (
-												<GitPullRequest className='size-3.5' />
-											)}
-											Create PR
+											<ScrollText className='size-3.5' />
+											Show diff
 										</Button>
-									)}
-								</>
-							)}
-							{hasManualFix && (
-								<>
-									<span className='text-xs font-medium text-muted-foreground'>
-										Needs a manual fix (auto-generated file)
-									</span>
-									<Button
-										size='sm'
-										variant='outline'
-										onClick={() =>
-											sidePanel.open(
-												<RecommendationManualFixPanel
-													title={rec.title}
-													guidance={rec.fixGuidance}
-													prompt={rec.fixPrompt}
-												/>,
-											)
-										}
-									>
-										<Wand2 className='size-3.5' />
-										How to fix
-									</Button>
-								</>
-							)}
-							{createPr.error && (
-								<span className='w-full text-xs text-destructive'>{createPr.error.message}</span>
-							)}
-						</div>
-					)}
-				</CardContent>
-			)}
+										{rec.prUrl ? (
+											<>
+												<Button size='sm' variant='outline' asChild>
+													<a href={rec.prUrl} target='_blank' rel='noopener noreferrer'>
+														<ExternalLink className='size-3.5' />
+														View PR
+													</a>
+												</Button>
+												<PrStatusBadge state={prStatus.data?.state} />
+											</>
+										) : (
+											<Button
+												size='sm'
+												onClick={() => createPr.mutate({ id: rec.id })}
+												disabled={createPr.isPending}
+											>
+												{createPr.isPending ? (
+													<Loader2 className='size-3.5 animate-spin' />
+												) : (
+													<GitPullRequest className='size-3.5' />
+												)}
+												Create PR
+											</Button>
+										)}
+									</>
+								)}
+								{hasManualFix && (
+									<>
+										<span className='text-xs font-medium text-muted-foreground'>
+											Needs a manual fix (auto-generated file)
+										</span>
+										<Button
+											size='sm'
+											variant='outline'
+											onClick={() =>
+												sidePanel.open(
+													<RecommendationManualFixPanel
+														title={rec.title}
+														guidance={rec.fixGuidance}
+														prompt={rec.fixPrompt}
+													/>,
+												)
+											}
+										>
+											<Wand2 className='size-3.5' />
+											How to fix
+										</Button>
+									</>
+								)}
+								{createPr.error && (
+									<span className='w-full text-xs text-destructive'>{createPr.error.message}</span>
+								)}
+							</div>
+						)}
+					</CardContent>
+				</div>
+			</div>
 		</Card>
 	);
 }
