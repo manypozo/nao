@@ -258,6 +258,7 @@ def sync_database(
                 )
 
                 ctx = db_config.create_context(conn, schema, table)
+                ctx.set_exclude_columns(db_config.exclude_columns)
                 table_usage = usage_stats.get(f"{schema}.{table}", TableUsageStats())
 
                 for template_name in templates:

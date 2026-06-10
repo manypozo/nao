@@ -296,6 +296,45 @@ def test_query_history_sql_unsupported_database_returns_none_when_no_override():
     assert db.get_query_history_sql(30) is None
 
 
+def test_exclude_columns_default_is_empty():
+    db = DuckDBConfig(name="test-db", path=":memory:")
+    assert db.exclude_columns == []
+
+
+def test_exclude_columns_matches_against_schema_table_column():
+    db = DuckDBConfig(
+        name="test-db",
+        path=":memory:",
+        exclude_columns=["*.version", "analytics.events.*_id"],
+    )
+    assert db.column_matches_pattern("analytics", "users", "name") is True
+    assert db.column_matches_pattern("analytics", "users", "version") is False
+    assert db.column_matches_pattern("analytics", "events", "user_id") is False
+    assert db.column_matches_pattern("staging", "events", "user_id") is True
+
+
+def test_exclude_columns_supports_glob_in_column_name():
+    db = DuckDBConfig(
+        name="test-db",
+        path=":memory:",
+        exclude_columns=["*._peerdb_*"],
+    )
+    assert db.column_matches_pattern("analytics", "users", "_peerdb_version") is False
+    assert db.column_matches_pattern("analytics", "users", "name") is True
+
+
+def test_exclude_columns_loaded_from_yaml_dict():
+    db = DuckDBConfig.model_validate(
+        {
+            "type": "duckdb",
+            "name": "test-db",
+            "path": ":memory:",
+            "exclude_columns": ["*._peerdb_*", "*.sign", "*.version"],
+        }
+    )
+    assert db.exclude_columns == ["*._peerdb_*", "*.sign", "*.version"]
+
+
 def test_query_history_fields_loaded_from_yaml_dict():
     db = DuckDBConfig.model_validate(
         {
