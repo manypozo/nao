@@ -62,7 +62,7 @@ export async function runContextRecommendations(
 			? createContextFixCollector(project!.path!, linkedRepos, { allowContextEdits: !!contextRepo })
 			: null;
 
-		const existing = await crQueries.getActiveRecommendations(projectId);
+		const existing = await crQueries.getReconcilableRecommendations(projectId);
 		const dismissedFingerprints = await crQueries.getDismissedFingerprints(projectId);
 		const totals = await crQueries.getWindowTotals(projectId, periodStart, periodEnd);
 

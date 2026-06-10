@@ -1,3 +1,4 @@
+import { env } from '../env';
 import * as crQueries from '../queries/context-recommendation.queries';
 import * as scheduledJobQueries from '../queries/scheduled-job.queries';
 import { runContextRecommendations } from '../services/context-recommendations.service';
@@ -7,6 +8,7 @@ import {
 	ContextRecommendationFrequency,
 	DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY,
 } from '../types/context-recommendation';
+import { logger } from '../utils/logger';
 
 export const CONTEXT_RECOMMENDATIONS_JOB_NAME = 'context.recommendations';
 
@@ -17,6 +19,14 @@ interface ContextRecommendationsJobPayload {
 export const contextRecommendationsHandler: JobHandler<ContextRecommendationsJobPayload> = async (payload) => {
 	if (typeof payload.projectId !== 'string') {
 		throw new Error('Context recommendations job is missing a projectId payload.');
+	}
+	const latestRun = await crQueries.getLatestRun(payload.projectId);
+	if (latestRun?.status === 'running') {
+		logger.warn(
+			`Skipping scheduled context recommendations for project ${payload.projectId}: a run is already in progress.`,
+			{ source: 'agent' },
+		);
+		return;
 	}
 	await runContextRecommendations(payload.projectId);
 };
@@ -38,6 +48,25 @@ export async function ensureContextRecommendationsSchedule(
 		payload: { projectId },
 		resetRunAtOnConflict: options?.reset,
 	});
+}
+
+/**
+ * Registers the default schedule for a project created after server startup, so
+ * it does not have to wait for a restart (or a manual frequency change) to get
+ * analyzed. Best-effort: a scheduling failure must not fail project creation.
+ */
+export async function ensureContextRecommendationsScheduleForNewProject(projectId: string): Promise<void> {
+	if (!env.BETA_CONTEXT_RECOMMENDATIONS_ENABLED) {
+		return;
+	}
+	try {
+		await ensureContextRecommendationsSchedule(projectId, DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY);
+	} catch (err) {
+		logger.error(
+			`Failed to register context recommendations schedule for project ${projectId}: ${err instanceof Error ? err.message : String(err)}`,
+			{ source: 'system' },
+		);
+	}
 }
 
 export async function ensureContextRecommendationsSchedules(): Promise<void> {

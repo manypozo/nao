@@ -4,21 +4,21 @@ import { validateAppDbQuery } from '../src/utils/app-db-allowlist';
 
 describe('validateAppDbQuery', () => {
 	it('allows a SELECT over an allowlisted view', async () => {
-		expect((await validateAppDbQuery('SELECT id FROM v_chat')).ok).toBe(true);
+		expect((await validateAppDbQuery('SELECT chat_id FROM v_messages')).ok).toBe(true);
 	});
 
 	it('allows a JOIN across allowlisted views', async () => {
-		const sql = 'SELECT c.id FROM v_chat c JOIN v_chat_message m ON m.chat_id = c.id';
+		const sql = 'SELECT m.chat_id FROM v_messages m JOIN v_memories mem ON mem.chat_id = m.chat_id';
 		expect((await validateAppDbQuery(sql)).ok).toBe(true);
 	});
 
 	it('allows a CTE over allowlisted views', async () => {
-		const sql = 'WITH t AS (SELECT id FROM v_chat) SELECT * FROM t';
+		const sql = 'WITH t AS (SELECT chat_id FROM v_messages) SELECT * FROM t';
 		expect((await validateAppDbQuery(sql)).ok).toBe(true);
 	});
 
 	it('rejects a write', async () => {
-		expect((await validateAppDbQuery("UPDATE v_chat SET title = 'x'")).ok).toBe(false);
+		expect((await validateAppDbQuery("UPDATE v_messages SET title = 'x'")).ok).toBe(false);
 	});
 
 	it('rejects a base table (not a view)', async () => {

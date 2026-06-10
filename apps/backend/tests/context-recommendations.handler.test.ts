@@ -11,12 +11,18 @@ import {
 const mocks = vi.hoisted(() => ({
 	deleteJobByUniqueKey: vi.fn(),
 	ensureRecurring: vi.fn(),
+	getLatestRun: vi.fn(),
 	listProjectRecommendationScheduleConfigs: vi.fn(),
 	runContextRecommendations: vi.fn(),
 }));
 
 vi.mock('../src/queries/context-recommendation.queries', () => ({
+	getLatestRun: mocks.getLatestRun,
 	listProjectRecommendationScheduleConfigs: mocks.listProjectRecommendationScheduleConfigs,
+}));
+
+vi.mock('../src/utils/logger', () => ({
+	logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('../src/queries/scheduled-job.queries', () => ({
@@ -34,6 +40,7 @@ vi.mock('../src/services/scheduler.service', () => ({
 describe('context recommendations scheduling', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mocks.getLatestRun.mockResolvedValue(null);
 	});
 
 	it('uses one recurring job key per project', async () => {
@@ -95,6 +102,14 @@ describe('context recommendations scheduling', () => {
 		await expect(contextRecommendationsHandler({}, {} as never)).rejects.toThrow(
 			'Context recommendations job is missing a projectId payload.',
 		);
+		expect(mocks.runContextRecommendations).not.toHaveBeenCalled();
+	});
+
+	it('skips the scheduled run when one is already in progress', async () => {
+		mocks.getLatestRun.mockResolvedValue({ status: 'running' });
+
+		await contextRecommendationsHandler({ projectId: 'project-1' }, {} as never);
+
 		expect(mocks.runContextRecommendations).not.toHaveBeenCalled();
 	});
 });

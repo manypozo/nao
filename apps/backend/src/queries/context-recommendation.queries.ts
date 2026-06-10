@@ -10,7 +10,12 @@ import s, {
 import { db, type DBExecutor } from '../db/db';
 import { WindowTotals } from '../types/context-recommendation';
 
-const ACTIVE_STATUSES = ['open', 'acknowledged', 'snoozed'] as const;
+/**
+ * Statuses the reconciler must see, i.e. everything except `dismissed` (handled
+ * separately as fingerprints). `applied` rows must be included so a re-recorded
+ * fingerprint reopens the row instead of inserting a duplicate.
+ */
+const RECONCILABLE_STATUSES = ['open', 'acknowledged', 'snoozed', 'applied'] as const;
 
 type ContextRecommendationConfigPatch = Partial<
 	Omit<NewContextRecommendationConfig, 'projectId' | 'createdAt' | 'updatedAt'>
@@ -106,14 +111,14 @@ export async function failRun(runId: string, errorMessage: string): Promise<void
 		.execute();
 }
 
-export async function getActiveRecommendations(projectId: string): Promise<DBContextRecommendation[]> {
+export async function getReconcilableRecommendations(projectId: string): Promise<DBContextRecommendation[]> {
 	return db
 		.select()
 		.from(s.contextRecommendation)
 		.where(
 			and(
 				eq(s.contextRecommendation.projectId, projectId),
-				inArray(s.contextRecommendation.status, [...ACTIVE_STATUSES]),
+				inArray(s.contextRecommendation.status, [...RECONCILABLE_STATUSES]),
 			),
 		)
 		.execute();

@@ -7,6 +7,7 @@ import { z } from 'zod/v4';
 
 import type { DBProject } from '../db/abstractSchema';
 import { env } from '../env';
+import { ensureContextRecommendationsScheduleForNewProject } from '../handlers/context-recommendations.handler';
 import * as orgQueries from '../queries/organization.queries';
 import * as projectQueries from '../queries/project.queries';
 import * as userQueries from '../queries/user.queries';
@@ -214,6 +215,7 @@ async function createProjectFromRepo({
 			role: member.role,
 		});
 	}
+	await ensureContextRecommendationsScheduleForNewProject(project.id);
 
 	return { projectId: project.id, projectName, status: 'created' as const };
 }
