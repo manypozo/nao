@@ -15,6 +15,8 @@ const GENERATED_FILES = ['templates/', 'tests/'] as const;
 
 /** Strips a leading `./` and normalizes Windows separators so paths compare consistently. */
 export function normalizeContextPath(filePath: string): string {
+	return filePath.replace(/\\/g, '/').replace(/^\.?\//, '');
+}
 	return filePath.replace(/^\.?\//, '').replace(/\\/g, '/');
 }
 
