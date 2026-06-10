@@ -8,12 +8,16 @@ export function renderContextRecommendationsSystemPrompt(options?: {
 	proposeFixes?: boolean;
 	linkedRepos?: LinkedContextRepo[];
 	contextRepoConnected?: boolean;
+	customInstructions?: string;
 }): string {
+	const customInstructions = options?.customInstructions?.trim();
+
 	return renderToMarkdown(
 		<ContextRecommendationsSystemPrompt
 			proposeFixes={options?.proposeFixes ?? false}
 			linkedRepos={options?.linkedRepos ?? []}
 			contextRepoConnected={options?.contextRepoConnected ?? false}
+			customInstructions={customInstructions}
 		/>,
 	);
 }
@@ -22,10 +26,12 @@ function ContextRecommendationsSystemPrompt({
 	proposeFixes,
 	linkedRepos,
 	contextRepoConnected,
+	customInstructions,
 }: {
 	proposeFixes: boolean;
 	linkedRepos: LinkedContextRepo[];
 	contextRepoConnected: boolean;
+	customInstructions?: string;
 }) {
 	return (
 		<Block>
@@ -118,6 +124,15 @@ function ContextRecommendationsSystemPrompt({
 						: 'never edit files, never run warehouse queries, never answer analytics questions.'}
 				</ListItem>
 			</List>
+
+			{customInstructions && (
+				<Block separator={'\n'}>
+					<Title level={2}>
+						Custom instructions given by the user, if it contradicts the above take this as the truth
+					</Title>
+					<Span>{customInstructions}</Span>
+				</Block>
+			)}
 		</Block>
 	);
 }

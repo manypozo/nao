@@ -7,12 +7,15 @@ import { ContextFixCollector, createContextFixCollector } from '../agents/tools/
 import { createQueryAppDbTool } from '../agents/tools/query-app-db';
 import { createRecommendationCollector } from '../agents/tools/record-recommendation';
 import { renderContextRecommendationsPrompt, renderContextRecommendationsSystemPrompt } from '../components/ai';
-import s, { DBContextRecommendation, NewContextRecommendation } from '../db/abstractSchema';
+import s, {
+	DBContextRecommendation,
+	DBContextRecommendationConfig,
+	NewContextRecommendation,
+} from '../db/abstractSchema';
 import { db } from '../db/db';
 import * as chatQueries from '../queries/chat.queries';
 import * as crQueries from '../queries/context-recommendation.queries';
 import * as projectQueries from '../queries/project.queries';
-import { AgentSettings } from '../types/agent-settings';
 import { DEFAULT_MAX_AUTO_PRS_PER_RUN } from '../types/context-recommendation';
 import { logger } from '../utils/logger';
 import { extractConfiguredRepos } from '../utils/nao-config';
@@ -38,8 +41,8 @@ export async function runContextRecommendations(
 	const periodEnd = period?.end ?? now;
 	const periodStart = period?.start ?? (await resolvePeriodStart(projectId, periodEnd));
 
-	const agentSettings = await projectQueries.getAgentSettings(projectId);
-	const model = await agentService.resolveModelSelection(projectId, resolveConfiguredModel(agentSettings));
+	const config = await crQueries.getConfig(projectId);
+	const model = await agentService.resolveModelSelection(projectId, resolveConfiguredModel(config));
 
 	const run = await crQueries.createRun({
 		projectId,
@@ -93,6 +96,7 @@ export async function runContextRecommendations(
 				proposeFixes,
 				linkedRepos,
 				contextRepoConnected: !!contextRepo,
+				customInstructions: config?.customSystemPromptInstructions ?? undefined,
 			}),
 			tools: ({ agentSettings }) =>
 				getTools(
@@ -132,12 +136,11 @@ export async function runContextRecommendations(
 
 		// YOLO mode: open PRs for the top recommendations before the run is marked
 		// completed, so the UI refresh at completion already shows them as applied.
-		const crConfig = agentSettings?.contextRecommendations;
-		if (proposeFixes && crConfig?.autoCreatePrs) {
+		if (proposeFixes && config?.autoCreatePrs) {
 			await autoCreateRecommendationPullRequests(
 				projectId,
 				userId,
-				crConfig.maxAutoPrsPerRun ?? DEFAULT_MAX_AUTO_PRS_PER_RUN,
+				config.maxAutoPrsPerRun ?? DEFAULT_MAX_AUTO_PRS_PER_RUN,
 			);
 		}
 
@@ -163,10 +166,9 @@ export async function runContextRecommendationsForAllProjects(): Promise<void> {
 	}
 }
 
-function resolveConfiguredModel(agentSettings: AgentSettings | null): LlmSelectedModel | undefined {
-	const cfg = agentSettings?.contextRecommendations;
-	if (cfg?.modelProvider && cfg?.modelId) {
-		return { provider: cfg.modelProvider, modelId: cfg.modelId };
+function resolveConfiguredModel(config: DBContextRecommendationConfig | null): LlmSelectedModel | undefined {
+	if (config?.modelProvider && config?.modelId) {
+		return { provider: config.modelProvider, modelId: config.modelId };
 	}
 	return undefined; // agentService resolves the project default
 }

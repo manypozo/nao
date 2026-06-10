@@ -20,8 +20,9 @@ import { LOG_CLEANUP_JOB_NAME, logCleanupHandler, runLogCleanup } from './handle
 import { MCP_QUERY_DATA_CLEANUP_JOB_NAME, mcpQueryDataCleanupHandler } from './handlers/mcp-query-data-cleanup.handler';
 import { STORY_REFRESH_JOB_NAME, storyRefreshHandler } from './handlers/story-refresh.handler';
 import { mcpServerRoutes } from './mcp/routes';
+import * as crQueries from './queries/context-recommendation.queries';
 import { ensureOrganizationSetup } from './queries/organization.queries';
-import { getAgentSettings, getDefaultProject } from './queries/project.queries';
+import { getDefaultProject } from './queries/project.queries';
 import { agentRoutes } from './routes/agent';
 import { authRoutes } from './routes/auth';
 import { authErrorRedirectRoutes } from './routes/auth-error-redirect';
@@ -332,9 +333,7 @@ export const startServer = async (opts: { port: number; host: string }) => {
 		let frequency = DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY;
 		try {
 			const defaultProject = await getDefaultProject();
-			const recommendationsSettings = defaultProject
-				? (await getAgentSettings(defaultProject.id))?.contextRecommendations
-				: null;
+			const recommendationsSettings = defaultProject ? await crQueries.getConfig(defaultProject.id) : null;
 			frequency = recommendationsSettings?.frequency ?? DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY;
 		} catch (err) {
 			logger.error(

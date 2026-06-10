@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { LlmProvider } from '@nao/shared/types';
 
@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SettingsCard, SettingsPageWrapper } from '@/components/ui/settings-card';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { SidePanelProvider } from '@/contexts/side-panel';
 import { useSidePanel } from '@/hooks/use-side-panel';
 import { requireAdmin } from '@/lib/require-admin';
@@ -36,6 +37,7 @@ type Frequency = (typeof FREQUENCY_OPTIONS)[number]['value'];
 
 const MAX_AUTO_PR_OPTIONS = [1, 2, 3, 5, 10] as const;
 const DEFAULT_MAX_AUTO_PRS = 3;
+const MAX_CUSTOM_SYSTEM_PROMPT_INSTRUCTIONS_LENGTH = 4000;
 
 /** The job runs at 03:00 UTC; render that moment in the viewer's local timezone (display only). */
 function localRunTime(): string {
@@ -48,6 +50,8 @@ function RecommendationsPage() {
 	const queryClient = useQueryClient();
 	const containerRef = useRef<HTMLDivElement>(null);
 	const sidePanelRef = useRef<HTMLDivElement>(null);
+	const [customSystemPromptInstructions, setCustomSystemPromptInstructions] = useState('');
+	const [customSystemPromptInstructionsEnabled, setCustomSystemPromptInstructionsEnabled] = useState(false);
 	const sidePanel = useSidePanel({
 		containerRef,
 		sidePanelRef,
@@ -102,6 +106,14 @@ function RecommendationsPage() {
 	const selectedFrequency: Frequency = config.data?.frequency ?? 'weekly';
 	const activeRecommendations = recommendations.data?.filter((rec) => rec.status === 'open') ?? [];
 	const handledRecommendations = recommendations.data?.filter((rec) => rec.status !== 'open') ?? [];
+	const savedCustomSystemPromptInstructions = config.data?.customSystemPromptInstructions ?? '';
+	const hasCustomSystemPromptInstructionsChanges =
+		customSystemPromptInstructions.trim() !== savedCustomSystemPromptInstructions.trim();
+
+	useEffect(() => {
+		setCustomSystemPromptInstructions(savedCustomSystemPromptInstructions);
+		setCustomSystemPromptInstructionsEnabled(savedCustomSystemPromptInstructions.trim().length > 0);
+	}, [savedCustomSystemPromptInstructions]);
 
 	const handleFrequencyChange = async (value: string) => {
 		await setConfig.mutateAsync({ frequency: value as Frequency });
@@ -118,6 +130,32 @@ function RecommendationsPage() {
 
 	const handleMaxAutoPrsChange = async (value: string) => {
 		await setConfig.mutateAsync({ maxAutoPrsPerRun: Number(value) });
+		queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.getConfig.queryKey() });
+	};
+
+	const handleCustomSystemPromptInstructionsSave = async () => {
+		if (!hasCustomSystemPromptInstructionsChanges) {
+			return;
+		}
+		await setConfig.mutateAsync({
+			customSystemPromptInstructions: customSystemPromptInstructions.trim(),
+		});
+		queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.getConfig.queryKey() });
+	};
+
+	const handleCustomSystemPromptInstructionsEnabledChange = async (checked: boolean) => {
+		setCustomSystemPromptInstructionsEnabled(checked);
+
+		if (checked) {
+			return;
+		}
+
+		setCustomSystemPromptInstructions('');
+		if (!savedCustomSystemPromptInstructions.trim()) {
+			return;
+		}
+
+		await setConfig.mutateAsync({ customSystemPromptInstructions: '' });
 		queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.getConfig.queryKey() });
 	};
 
@@ -234,6 +272,51 @@ function RecommendationsPage() {
 										</SelectContent>
 									</Select>
 								</div>
+							</div>
+
+							<div className='flex flex-col gap-2'>
+								<div className='flex items-center justify-between gap-4'>
+									<div>
+										<div className='text-sm'>Custom system prompt instructions</div>
+										<div className='text-xs text-muted-foreground'>
+											Added to every context recommendations run after the built-in audit
+											instructions.
+										</div>
+									</div>
+									<Switch
+										checked={customSystemPromptInstructionsEnabled}
+										onCheckedChange={handleCustomSystemPromptInstructionsEnabledChange}
+										disabled={setConfig.isPending}
+									/>
+								</div>
+								{customSystemPromptInstructionsEnabled && (
+									<>
+										<Textarea
+											value={customSystemPromptInstructions}
+											onChange={(event) => setCustomSystemPromptInstructions(event.target.value)}
+											placeholder='Example: Prioritize recommendations that improve revenue metric definitions.'
+											maxLength={MAX_CUSTOM_SYSTEM_PROMPT_INSTRUCTIONS_LENGTH}
+											disabled={setConfig.isPending}
+											className='min-h-28 resize-y'
+										/>
+										<div className='flex items-center justify-between gap-4'>
+											<div className='text-xs text-muted-foreground'>
+												{customSystemPromptInstructions.length}/
+												{MAX_CUSTOM_SYSTEM_PROMPT_INSTRUCTIONS_LENGTH} characters
+											</div>
+											<Button
+												size='sm'
+												variant='outline'
+												onClick={handleCustomSystemPromptInstructionsSave}
+												disabled={
+													setConfig.isPending || !hasCustomSystemPromptInstructionsChanges
+												}
+											>
+												Save
+											</Button>
+										</div>
+									</>
+								)}
 							</div>
 
 							<div className='flex items-center justify-between gap-4'>

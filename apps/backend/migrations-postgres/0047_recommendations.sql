@@ -31,6 +31,19 @@ CREATE TABLE "context_recommendation" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "context_recommendation_config" (
+	"project_id" text PRIMARY KEY NOT NULL,
+	"model_provider" text,
+	"model_id" text,
+	"frequency" text,
+	"custom_system_prompt_instructions" text,
+	"repo_full_name" text,
+	"auto_create_prs" boolean,
+	"max_auto_prs_per_run" integer,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "context_recommendation_run" (
 	"id" text PRIMARY KEY NOT NULL,
 	"project_id" text NOT NULL,
@@ -53,6 +66,7 @@ CREATE TABLE "context_recommendation_run" (
 ALTER TABLE "context_recommendation" ADD CONSTRAINT "context_recommendation_project_id_project_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."project"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "context_recommendation" ADD CONSTRAINT "context_recommendation_status_changed_by_user_id_fk" FOREIGN KEY ("status_changed_by") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "context_recommendation" ADD CONSTRAINT "context_recommendation_run_fk" FOREIGN KEY ("run_id","project_id") REFERENCES "public"."context_recommendation_run"("id","project_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "context_recommendation_config" ADD CONSTRAINT "context_recommendation_config_project_id_project_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."project"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "context_recommendation_run" ADD CONSTRAINT "context_recommendation_run_project_id_project_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."project"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "context_recommendation_run" ADD CONSTRAINT "context_recommendation_run_chat_id_chat_id_fk" FOREIGN KEY ("chat_id") REFERENCES "public"."chat"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "context_recommendation_project_fingerprint_unique" ON "context_recommendation" USING btree ("project_id","fingerprint");--> statement-breakpoint

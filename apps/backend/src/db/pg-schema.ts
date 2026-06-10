@@ -24,6 +24,7 @@ import { AUTOMATION_RUN_STATUSES, AutomationIntegrationConfig, AutomationIntegra
 import { ForkMetadata, MESSAGE_SOURCES, StopReason, ToolState, UIMessagePartType } from '../types/chat';
 import {
 	CONTEXT_RECOMMENDATION_FIX_KINDS,
+	CONTEXT_RECOMMENDATION_FREQUENCIES,
 	CONTEXT_RECOMMENDATION_RUN_STATUSES,
 	CONTEXT_RECOMMENDATION_RUN_TRIGGERS,
 	CONTEXT_RECOMMENDATION_SEVERITIES,
@@ -608,6 +609,24 @@ export const contextRecommendationRun = pgTable(
 		unique('context_recommendation_run_id_project_unique').on(t.id, t.projectId),
 	],
 );
+
+export const contextRecommendationConfig = pgTable('context_recommendation_config', {
+	projectId: text('project_id')
+		.primaryKey()
+		.references(() => project.id, { onDelete: 'cascade' }),
+	modelProvider: text('model_provider').$type<LlmProvider>(),
+	modelId: text('model_id'),
+	frequency: text('frequency', { enum: CONTEXT_RECOMMENDATION_FREQUENCIES }),
+	customSystemPromptInstructions: text('custom_system_prompt_instructions'),
+	repoFullName: text('repo_full_name'),
+	autoCreatePrs: boolean('auto_create_prs'),
+	maxAutoPrsPerRun: integer('max_auto_prs_per_run'),
+	createdAt: timestamp('created_at').defaultNow().notNull(),
+	updatedAt: timestamp('updated_at')
+		.defaultNow()
+		.$onUpdate(() => new Date())
+		.notNull(),
+});
 
 export const contextRecommendation = pgTable(
 	'context_recommendation',

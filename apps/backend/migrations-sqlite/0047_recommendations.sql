@@ -37,6 +37,20 @@ CREATE TABLE `context_recommendation` (
 CREATE UNIQUE INDEX `context_recommendation_project_fingerprint_unique` ON `context_recommendation` (`project_id`,`fingerprint`);--> statement-breakpoint
 CREATE INDEX `context_recommendation_projectId_status_idx` ON `context_recommendation` (`project_id`,`status`);--> statement-breakpoint
 CREATE INDEX `context_recommendation_runId_idx` ON `context_recommendation` (`run_id`);--> statement-breakpoint
+CREATE TABLE `context_recommendation_config` (
+	`project_id` text PRIMARY KEY NOT NULL,
+	`model_provider` text,
+	`model_id` text,
+	`frequency` text,
+	`custom_system_prompt_instructions` text,
+	`repo_full_name` text,
+	`auto_create_prs` integer,
+	`max_auto_prs_per_run` integer,
+	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
 CREATE TABLE `context_recommendation_run` (
 	`id` text PRIMARY KEY NOT NULL,
 	`project_id` text NOT NULL,

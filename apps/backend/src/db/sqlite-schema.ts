@@ -21,6 +21,7 @@ import { AUTOMATION_RUN_STATUSES, AutomationIntegrationConfig, AutomationIntegra
 import { ForkMetadata, MESSAGE_SOURCES, StopReason, ToolState, UIMessagePartType } from '../types/chat';
 import {
 	CONTEXT_RECOMMENDATION_FIX_KINDS,
+	CONTEXT_RECOMMENDATION_FREQUENCIES,
 	CONTEXT_RECOMMENDATION_RUN_STATUSES,
 	CONTEXT_RECOMMENDATION_RUN_TRIGGERS,
 	CONTEXT_RECOMMENDATION_SEVERITIES,
@@ -651,6 +652,26 @@ export const contextRecommendationRun = sqliteTable(
 		unique('context_recommendation_run_id_project_unique').on(t.id, t.projectId),
 	],
 );
+
+export const contextRecommendationConfig = sqliteTable('context_recommendation_config', {
+	projectId: text('project_id')
+		.primaryKey()
+		.references(() => project.id, { onDelete: 'cascade' }),
+	modelProvider: text('model_provider').$type<LlmProvider>(),
+	modelId: text('model_id'),
+	frequency: text('frequency', { enum: CONTEXT_RECOMMENDATION_FREQUENCIES }),
+	customSystemPromptInstructions: text('custom_system_prompt_instructions'),
+	repoFullName: text('repo_full_name'),
+	autoCreatePrs: integer('auto_create_prs', { mode: 'boolean' }),
+	maxAutoPrsPerRun: integer('max_auto_prs_per_run'),
+	createdAt: integer('created_at', { mode: 'timestamp_ms' })
+		.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+		.notNull(),
+	updatedAt: integer('updated_at', { mode: 'timestamp_ms' })
+		.default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+		.$onUpdate(() => new Date())
+		.notNull(),
+});
 
 export const contextRecommendation = sqliteTable(
 	'context_recommendation',

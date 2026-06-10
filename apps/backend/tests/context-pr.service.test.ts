@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 	cloneRepo: vi.fn(),
 	commitAllAndPushBranch: vi.fn(),
 	createPullRequest: vi.fn(),
-	getAgentSettings: vi.fn(),
+	getConfig: vi.fn(),
 	getGitInfo: vi.fn(),
 	getGithubToken: vi.fn(),
 	getProjectById: vi.fn(),
@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../src/queries/context-recommendation.queries', () => ({
+	getConfig: mocks.getConfig,
 	getRecommendationById: mocks.getRecommendationById,
 	listRecommendations: vi.fn(),
 	setRecommendationPr: mocks.setRecommendationPr,
@@ -28,7 +29,6 @@ vi.mock('../src/queries/context-recommendation.queries', () => ({
 }));
 
 vi.mock('../src/queries/project.queries', () => ({
-	getAgentSettings: mocks.getAgentSettings,
 	getProjectById: mocks.getProjectById,
 }));
 
@@ -57,7 +57,7 @@ describe('createRecommendationPullRequest', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mocks.getProjectById.mockResolvedValue({ path: null });
-		mocks.getAgentSettings.mockResolvedValue({ contextRecommendations: { repoFullName: 'nao/context' } });
+		mocks.getConfig.mockResolvedValue({ repoFullName: 'nao/context' });
 		mocks.getGithubToken.mockResolvedValue('github-token');
 		mocks.getGitInfo.mockReturnValue({ branch: 'main', isGithub: true, repoFullName: 'nao/context' });
 		mocks.getUserGitIdentity.mockResolvedValue({ email: 'user@example.com', name: 'User' });

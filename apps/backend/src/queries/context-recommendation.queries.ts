@@ -1,6 +1,12 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, lt, sql } from 'drizzle-orm';
 
-import s, { DBContextRecommendation, DBContextRecommendationRun, NewContextRecommendation } from '../db/abstractSchema';
+import s, {
+	DBContextRecommendation,
+	DBContextRecommendationConfig,
+	DBContextRecommendationRun,
+	NewContextRecommendation,
+	NewContextRecommendationConfig,
+} from '../db/abstractSchema';
 import { db } from '../db/db';
 import { WindowTotals } from '../types/context-recommendation';
 
@@ -8,6 +14,40 @@ import { WindowTotals } from '../types/context-recommendation';
 export type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const ACTIVE_STATUSES = ['open', 'acknowledged', 'snoozed'] as const;
+
+type ContextRecommendationConfigPatch = Partial<
+	Omit<NewContextRecommendationConfig, 'projectId' | 'createdAt' | 'updatedAt'>
+>;
+
+export async function getConfig(projectId: string): Promise<DBContextRecommendationConfig | null> {
+	const [config] = await db
+		.select()
+		.from(s.contextRecommendationConfig)
+		.where(eq(s.contextRecommendationConfig.projectId, projectId))
+		.limit(1)
+		.execute();
+	return config ?? null;
+}
+
+export async function updateConfig(
+	projectId: string,
+	patch: ContextRecommendationConfigPatch,
+): Promise<DBContextRecommendationConfig> {
+	const cleanedPatch = Object.fromEntries(
+		Object.entries(patch).filter(([, value]) => value !== undefined),
+	) as ContextRecommendationConfigPatch;
+
+	const [config] = await db
+		.insert(s.contextRecommendationConfig)
+		.values({ projectId, ...cleanedPatch })
+		.onConflictDoUpdate({
+			target: s.contextRecommendationConfig.projectId,
+			set: { ...cleanedPatch, updatedAt: new Date() },
+		})
+		.returning()
+		.execute();
+	return config;
+}
 
 export async function createRun(input: {
 	projectId: string;

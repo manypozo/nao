@@ -1,3 +1,5 @@
+import type { LlmProvider } from '@nao/shared/types';
+
 export const CONTEXT_RECOMMENDATION_RUN_STATUSES = ['running', 'completed', 'failed'] as const;
 export type ContextRecommendationRunStatus = (typeof CONTEXT_RECOMMENDATION_RUN_STATUSES)[number];
 
@@ -78,4 +80,14 @@ export interface LinkedContextRepo {
 	branch: string | null;
 	localPath: string | null;
 	repoFullName: string | null;
+}
+
+export interface ContextRecommendationConfig {
+	modelProvider?: LlmProvider | null;
+	modelId?: string | null;
+	frequency?: ContextRecommendationFrequency | null;
+	customSystemPromptInstructions?: string | null;
+	repoFullName?: string | null;
+	autoCreatePrs?: boolean | null;
+	maxAutoPrsPerRun?: number | null;
 }

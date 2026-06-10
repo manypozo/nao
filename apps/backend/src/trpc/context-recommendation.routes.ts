@@ -5,7 +5,6 @@ import { z } from 'zod';
 import { env } from '../env';
 import { ensureContextRecommendationsSchedule } from '../handlers/context-recommendations.handler';
 import * as crQueries from '../queries/context-recommendation.queries';
-import { getAgentSettings, updateAgentSettings } from '../queries/project.queries';
 import * as userQueries from '../queries/user.queries';
 import { createRecommendationPullRequest, resolveRecommendationRepo } from '../services/context-pr.service';
 import { runContextRecommendations } from '../services/context-recommendations.service';
@@ -20,6 +19,8 @@ import { getProjectAvailableModels } from '../utils/llm';
 import { logger } from '../utils/logger';
 import { extractConfiguredRepos } from '../utils/nao-config';
 import { adminProtectedProcedure } from './trpc';
+
+const MAX_CUSTOM_SYSTEM_PROMPT_INSTRUCTIONS_LENGTH = 4000;
 
 const recommendationsProcedure = adminProtectedProcedure.use(async ({ next }) => {
 	if (!env.BETA_CONTEXT_RECOMMENDATIONS_ENABLED) {
@@ -49,8 +50,7 @@ export const contextRecommendationRoutes = {
 	listAvailableModels: recommendationsProcedure.query(async ({ ctx }) => getProjectAvailableModels(ctx.project.id)),
 
 	getConfig: recommendationsProcedure.query(async ({ ctx }) => {
-		const settings = await getAgentSettings(ctx.project.id);
-		return settings?.contextRecommendations ?? null;
+		return crQueries.getConfig(ctx.project.id);
 	}),
 
 	setConfig: recommendationsProcedure
@@ -59,21 +59,23 @@ export const contextRecommendationRoutes = {
 				modelProvider: z.enum(LLM_PROVIDERS).optional(),
 				modelId: z.string().optional(),
 				frequency: z.enum(CONTEXT_RECOMMENDATION_FREQUENCIES).optional(),
+				customSystemPromptInstructions: z.string().max(MAX_CUSTOM_SYSTEM_PROMPT_INSTRUCTIONS_LENGTH).optional(),
 				autoCreatePrs: z.boolean().optional(),
 				maxAutoPrsPerRun: z.number().int().min(MIN_AUTO_PRS_PER_RUN).max(MAX_AUTO_PRS_PER_RUN).optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const current = (await getAgentSettings(ctx.project.id))?.contextRecommendations;
-			await updateAgentSettings(ctx.project.id, {
-				contextRecommendations: {
-					...current,
-					modelProvider: input.modelProvider ?? current?.modelProvider,
-					modelId: input.modelId ?? current?.modelId,
-					frequency: input.frequency ?? current?.frequency,
-					autoCreatePrs: input.autoCreatePrs ?? current?.autoCreatePrs,
-					maxAutoPrsPerRun: input.maxAutoPrsPerRun ?? current?.maxAutoPrsPerRun,
-				},
+			const customSystemPromptInstructions =
+				'customSystemPromptInstructions' in input
+					? input.customSystemPromptInstructions?.trim() || null
+					: undefined;
+			await crQueries.updateConfig(ctx.project.id, {
+				modelProvider: input.modelProvider,
+				modelId: input.modelId,
+				frequency: input.frequency,
+				customSystemPromptInstructions,
+				autoCreatePrs: input.autoCreatePrs,
+				maxAutoPrsPerRun: input.maxAutoPrsPerRun,
 			});
 			if (input.frequency) {
 				await ensureContextRecommendationsSchedule(input.frequency, { reset: true });
@@ -99,10 +101,7 @@ export const contextRecommendationRoutes = {
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			const current = (await getAgentSettings(ctx.project.id))?.contextRecommendations;
-			await updateAgentSettings(ctx.project.id, {
-				contextRecommendations: { ...current, repoFullName: input.repoFullName ?? undefined },
-			});
+			await crQueries.updateConfig(ctx.project.id, { repoFullName: input.repoFullName });
 		}),
 
 	setStatus: recommendationsProcedure

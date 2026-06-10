@@ -37,8 +37,8 @@ export async function resolveRecommendationRepo(projectId: string): Promise<Reco
 		}
 	}
 
-	const settings = await projectQueries.getAgentSettings(projectId);
-	const configured = settings?.contextRecommendations?.repoFullName;
+	const config = await crQueries.getConfig(projectId);
+	const configured = config?.repoFullName;
 	if (configured) {
 		return { repoFullName: configured, branch: null, source: 'settings' };
 	}
