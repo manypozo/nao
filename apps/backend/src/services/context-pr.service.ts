@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { DBContextRecommendation } from '../db/abstractSchema';
+import type { DBContextRecommendation } from '../db/abstractSchema';
 import * as crQueries from '../queries/context-recommendation.queries';
 import * as projectQueries from '../queries/project.queries';
 import * as userQueries from '../queries/user.queries';
@@ -19,7 +19,7 @@ export interface CreatePullRequestResult {
 export interface RecommendationRepo {
 	repoFullName: string;
 	branch: string | null;
-	source: 'project' | 'settings';
+	source: 'project' | 'settings' | 'linked';
 }
 
 /**
@@ -102,7 +102,7 @@ export async function createRecommendationPullRequest(
 		return { url: rec.prUrl, branch: rec.prBranch ?? '' };
 	}
 
-	const repo = await resolveRecommendationRepo(projectId);
+	const repo = await resolvePullRequestRepo(projectId, rec.proposedEdits);
 	if (!repo) {
 		throw new Error(
 			'No GitHub repository is configured for this project. Select one in Settings → Recommendations.',
@@ -114,7 +114,7 @@ export async function createRecommendationPullRequest(
 		throw new Error('GitHub is not connected. Connect your GitHub account first.');
 	}
 
-	const edits = rec.proposedEdits.filter((edit) => isHumanWritableContextPath(edit.path));
+	const edits = filterPullRequestEdits(rec.proposedEdits);
 	if (edits.length === 0) {
 		throw new Error('The proposed changes only touch auto-generated files and cannot be opened as a pull request.');
 	}
@@ -125,7 +125,7 @@ export async function createRecommendationPullRequest(
 
 	try {
 		github.cloneRepo(token, repoFullName, workdir);
-		const base = github.getGitInfo(workdir).branch ?? repo.branch ?? 'main';
+		const base = repo.branch ?? github.getGitInfo(workdir).branch ?? 'main';
 
 		applyEdits(workdir, edits);
 
@@ -159,14 +159,93 @@ export async function createRecommendationPullRequest(
 	}
 }
 
-function applyEdits(dir: string, edits: ProposedEdit[]): void {
+function resolvePullRequestRepo(projectId: string, edits: ProposedEdit[]): Promise<RecommendationRepo | null> {
+	const targetRepos = new Map<string, string | null>();
 	for (const edit of edits) {
-		const target = path.resolve(dir, edit.path);
-		if (target !== dir && !target.startsWith(dir + path.sep)) {
-			throw new Error(`Refusing to write outside the repository: ${edit.path}`);
+		if (edit.targetRepoFullName) {
+			targetRepos.set(edit.targetRepoFullName, edit.targetRepoBranch ?? null);
 		}
+	}
+
+	if (targetRepos.size === 0) {
+		return resolveRecommendationRepo(projectId);
+	}
+	if (targetRepos.size > 1) {
+		throw new Error('A recommendation cannot open one pull request across multiple repositories.');
+	}
+	if (edits.some((edit) => !edit.targetRepoFullName)) {
+		throw new Error('A recommendation cannot mix context repository edits with linked repository edits.');
+	}
+
+	const [[repoFullName, branch]] = targetRepos;
+	return Promise.resolve({ repoFullName, branch, source: 'linked' });
+}
+
+function filterPullRequestEdits(edits: ProposedEdit[]): ProposedEdit[] {
+	return edits.filter((edit) => {
+		if (edit.targetRepoFullName && edit.targetPath) {
+			return true;
+		}
+		return isHumanWritableContextPath(edit.path);
+	});
+}
+
+function applyEdits(dir: string, edits: ProposedEdit[]): void {
+	const root = fs.realpathSync(dir);
+	for (const edit of edits) {
+		const editPath = edit.targetPath ?? edit.path;
+		const target = path.resolve(root, editPath);
+		assertInsideRepository(root, target, editPath);
+		assertNoSymlinkInPath(root, target, editPath);
 		fs.mkdirSync(path.dirname(target), { recursive: true });
-		fs.writeFileSync(target, edit.newContent, 'utf-8');
+		writeFileNoFollow(target, edit.newContent);
+	}
+}
+
+function assertInsideRepository(root: string, target: string, editPath: string): void {
+	const relative = path.relative(root, target);
+	if (relative.startsWith('..') || path.isAbsolute(relative)) {
+		throw new Error(`Refusing to write outside the repository: ${editPath}`);
+	}
+}
+
+function assertNoSymlinkInPath(root: string, target: string, editPath: string): void {
+	const relative = path.relative(root, target);
+	if (relative === '') {
+		return;
+	}
+
+	let current = root;
+	for (const part of relative.split(path.sep)) {
+		current = path.join(current, part);
+		const stat = lstatIfExists(current);
+		if (!stat) {
+			return;
+		}
+		if (stat.isSymbolicLink()) {
+			throw new Error(`Refusing to write through a symlink in the repository: ${editPath}`);
+		}
+	}
+}
+
+function lstatIfExists(filePath: string): fs.Stats | null {
+	try {
+		return fs.lstatSync(filePath);
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+			return null;
+		}
+		throw err;
+	}
+}
+
+function writeFileNoFollow(filePath: string, content: string): void {
+	const flags = fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW;
+	const fd = fs.openSync(filePath, flags, 0o666);
+	try {
+		fs.writeFileSync(fd, content, 'utf-8');
+	} finally {
+		fs.closeSync(fd);
 	}
 }
 
@@ -179,7 +258,14 @@ function commitMessage(rec: DBContextRecommendation): string {
 }
 
 function prBody(rec: DBContextRecommendation, edits: ProposedEdit[]): string {
-	const files = edits.map((edit) => `- \`${edit.path}\``).join('\n');
+	const files = edits
+		.map((edit) => {
+			if (edit.targetRepoFullName && edit.targetPath) {
+				return `- \`${edit.targetRepoFullName}:${edit.targetPath}\` (from \`${edit.path}\`)`;
+			}
+			return `- \`${edit.path}\``;
+		})
+		.join('\n');
 	return [
 		'Proposed by **nao** context recommendations.',
 		'',

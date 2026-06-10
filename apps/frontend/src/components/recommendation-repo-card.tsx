@@ -47,6 +47,10 @@ export function RecommendationRepoCard() {
 		...trpc.contextRecommendation.getRepo.queryOptions(),
 		staleTime: 30_000,
 	});
+	const linkedRepos = useQuery({
+		...trpc.contextRecommendation.listLinkedRepos.queryOptions(),
+		staleTime: 30_000,
+	});
 
 	const invalidateRepo = () => {
 		queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.getRepo.queryKey() });
@@ -74,7 +78,7 @@ export function RecommendationRepoCard() {
 		return null;
 	}
 
-	if (available.isLoading || status.isLoading || repo.isLoading) {
+	if (available.isLoading || status.isLoading || repo.isLoading || linkedRepos.isLoading) {
 		return (
 			<SettingsCard title='Repository' icon={<Github className='size-4' />}>
 				<Skeleton className='h-4 w-48' />
@@ -108,10 +112,13 @@ export function RecommendationRepoCard() {
 				icon={<Github className='size-4' />}
 				description='This project is not linked to a GitHub repository. Select the repository that holds your context files so nao can open pull requests against it.'
 			>
-				<Button size='sm' onClick={() => setPickerOpen(true)}>
-					<Github className='size-3.5' />
-					Select repository
-				</Button>
+				<div className='flex flex-col gap-3'>
+					<Button size='sm' onClick={() => setPickerOpen(true)} className='self-start'>
+						<Github className='size-3.5' />
+						Select repository
+					</Button>
+					<LinkedReposList repos={linkedRepos.data ?? []} />
+				</div>
 				<RepoPickerDialog
 					open={pickerOpen}
 					onOpenChange={setPickerOpen}
@@ -174,6 +181,7 @@ export function RecommendationRepoCard() {
 					</div>
 				)}
 			</div>
+			<LinkedReposList repos={linkedRepos.data ?? []} />
 			{source !== 'project' && setRepo.error && (
 				<p className='text-sm text-destructive'>{setRepo.error.message}</p>
 			)}
@@ -213,6 +221,54 @@ export function RecommendationRepoCard() {
 				</AlertDialogContent>
 			</AlertDialog>
 		</SettingsCard>
+	);
+}
+
+interface LinkedRepo {
+	name: string;
+	contextPath: string;
+	repoFullName: string | null;
+	branch: string | null;
+	url: string | null;
+	localPath: string | null;
+}
+
+function LinkedReposList({ repos }: { repos: LinkedRepo[] }) {
+	if (repos.length === 0) {
+		return null;
+	}
+	return (
+		<div className='flex flex-col gap-1.5 rounded-md border border-dashed bg-muted/30 p-2 text-xs'>
+			<div className='font-medium text-muted-foreground'>Linked repos from nao_config.yaml</div>
+			<div className='flex flex-col gap-1'>
+				{repos.map((repo) => (
+					<div key={repo.name} className='flex flex-wrap items-center gap-x-1.5 gap-y-1'>
+						<span className='font-mono text-muted-foreground'>{repo.contextPath}/</span>
+						<span className='text-muted-foreground'>→</span>
+						{repo.repoFullName ? (
+							<a
+								href={`https://github.com/${repo.repoFullName}`}
+								target='_blank'
+								rel='noopener noreferrer'
+								className='font-mono text-foreground hover:underline'
+							>
+								{repo.repoFullName}
+							</a>
+						) : (
+							<span className='font-mono text-muted-foreground'>
+								{repo.localPath ?? repo.url ?? 'unlinked'}
+							</span>
+						)}
+						{repo.branch && (
+							<span className='flex items-center gap-1 rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground'>
+								<GitBranch className='size-3' />
+								{repo.branch}
+							</span>
+						)}
+					</div>
+				))}
+			</div>
+		</div>
 	);
 }
 

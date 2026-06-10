@@ -12,8 +12,13 @@ export type ContextRecommendationFrequency = (typeof CONTEXT_RECOMMENDATION_FREQ
 
 export const DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY: ContextRecommendationFrequency = 'weekly';
 
+export const MIN_AUTO_PRS_PER_RUN = 1;
 export const DEFAULT_MAX_AUTO_PRS_PER_RUN = 3;
 export const MAX_AUTO_PRS_PER_RUN = 10;
+
+if (DEFAULT_MAX_AUTO_PRS_PER_RUN < MIN_AUTO_PRS_PER_RUN || DEFAULT_MAX_AUTO_PRS_PER_RUN > MAX_AUTO_PRS_PER_RUN) {
+	throw new Error('DEFAULT_MAX_AUTO_PRS_PER_RUN must be within the auto PRs per run validation range.');
+}
 
 /** Cron expressions for each frequency. All run at 03:00 UTC. */
 export const CONTEXT_RECOMMENDATION_FREQUENCY_CRON: Record<ContextRecommendationFrequency, string> = {
@@ -55,10 +60,22 @@ export interface ProposedEdit {
 	kind: 'edit' | 'create';
 	oldContent: string;
 	newContent: string;
+	targetRepoFullName?: string;
+	targetRepoBranch?: string | null;
+	targetPath?: string;
 }
 
 export interface WindowTotals {
 	errors: number;
 	downvotes: number;
 	regenerations: number;
+}
+
+export interface LinkedContextRepo {
+	name: string;
+	contextPath: string;
+	url: string | null;
+	branch: string | null;
+	localPath: string | null;
+	repoFullName: string | null;
 }

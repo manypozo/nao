@@ -15,21 +15,22 @@ export interface LineDiff {
 
 /** Cap LCS work so a pathological large file can't freeze the UI. */
 const MAX_LINES = 4000;
+const MAX_DP_CELLS = 1_000_000;
 
 /**
  * Computes a GitHub-style line diff between two texts using a longest-common-subsequence
  * walk. Context files (markdown, yaml, sql) are small, so the quadratic table is fine.
  */
 export function computeLineDiff(oldText: string, newText: string): LineDiff {
-	const a = oldText.length ? oldText.split('\n') : [];
-	const b = newText.length ? newText.split('\n') : [];
+	const a = splitLines(oldText);
+	const b = splitLines(newText);
+	const m = a.length;
+	const n = b.length;
 
-	if (a.length > MAX_LINES || b.length > MAX_LINES) {
+	if (m > MAX_LINES || n > MAX_LINES || exceedsDpBudget(m, n)) {
 		return fallbackReplaceAll(a, b);
 	}
 
-	const m = a.length;
-	const n = b.length;
 	const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
 	for (let i = m - 1; i >= 0; i--) {
 		for (let j = n - 1; j >= 0; j--) {
@@ -80,4 +81,12 @@ function fallbackReplaceAll(a: string[], b: string[]): LineDiff {
 		...b.map((text, idx): DiffLine => ({ type: 'add', text, oldNumber: null, newNumber: idx + 1 })),
 	];
 	return { lines, additions: b.length, deletions: a.length };
+}
+
+function splitLines(text: string): string[] {
+	return text.length ? text.replaceAll('\r\n', '\n').split('\n') : [];
+}
+
+function exceedsDpBudget(m: number, n: number): boolean {
+	return (m + 1) * (n + 1) > MAX_DP_CELLS;
 }

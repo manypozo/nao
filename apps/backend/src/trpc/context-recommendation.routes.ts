@@ -14,9 +14,11 @@ import {
 	CONTEXT_RECOMMENDATION_FREQUENCIES,
 	CONTEXT_RECOMMENDATION_STATUSES,
 	MAX_AUTO_PRS_PER_RUN,
+	MIN_AUTO_PRS_PER_RUN,
 } from '../types/context-recommendation';
 import { getProjectAvailableModels } from '../utils/llm';
 import { logger } from '../utils/logger';
+import { extractConfiguredRepos } from '../utils/nao-config';
 import { adminProtectedProcedure } from './trpc';
 
 const recommendationsProcedure = adminProtectedProcedure.use(async ({ next }) => {
@@ -58,7 +60,7 @@ export const contextRecommendationRoutes = {
 				modelId: z.string().optional(),
 				frequency: z.enum(CONTEXT_RECOMMENDATION_FREQUENCIES).optional(),
 				autoCreatePrs: z.boolean().optional(),
-				maxAutoPrsPerRun: z.number().int().min(1).max(MAX_AUTO_PRS_PER_RUN).optional(),
+				maxAutoPrsPerRun: z.number().int().min(MIN_AUTO_PRS_PER_RUN).max(MAX_AUTO_PRS_PER_RUN).optional(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -79,6 +81,13 @@ export const contextRecommendationRoutes = {
 		}),
 
 	getRepo: recommendationsProcedure.query(async ({ ctx }) => resolveRecommendationRepo(ctx.project.id)),
+
+	listLinkedRepos: recommendationsProcedure.query(async ({ ctx }) => {
+		if (!ctx.project.path) {
+			return [];
+		}
+		return extractConfiguredRepos(ctx.project.path);
+	}),
 
 	setRepo: recommendationsProcedure
 		.input(

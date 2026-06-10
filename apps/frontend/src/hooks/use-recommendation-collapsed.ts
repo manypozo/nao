@@ -8,11 +8,19 @@ function readState(): Record<string, boolean> {
 		if (!stored) {
 			return {};
 		}
-		const parsed = JSON.parse(stored);
-		return parsed && typeof parsed === 'object' ? (parsed as Record<string, boolean>) : {};
+		const parsed: unknown = JSON.parse(stored);
+		return parseState(parsed);
 	} catch {
 		return {};
 	}
+}
+
+function parseState(value: unknown): Record<string, boolean> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) {
+		return {};
+	}
+
+	return Object.fromEntries(Object.entries(value).filter(([, collapsed]) => typeof collapsed === 'boolean'));
 }
 
 function writeState(state: Record<string, boolean>) {
@@ -30,7 +38,7 @@ function writeState(state: Record<string, boolean>) {
 export function useRecommendationCollapsed(id: string, defaultCollapsed = false) {
 	const [collapsed, setCollapsedState] = useState<boolean>(() => {
 		const state = readState();
-		return id in state ? state[id] : defaultCollapsed;
+		return Object.hasOwn(state, id) ? state[id] : defaultCollapsed;
 	});
 
 	const setCollapsed = useCallback(

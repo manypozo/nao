@@ -58,7 +58,7 @@ export const QueryAppDbToolCall = ({ toolPart }: ToolCallComponentProps) => {
 					SQL <span className='text-xs font-normal truncate'>{input?.sql}</span>
 				</span>
 			}
-			badge={output?.rowCount ? `${output.rowCount} rows` : undefined}
+			badge={output ? `${output.rowCount} rows` : undefined}
 			actions={isSettled ? actions : []}
 		>
 			{viewMode === 'query' && input?.sql ? (

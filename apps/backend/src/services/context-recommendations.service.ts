@@ -15,6 +15,7 @@ import * as projectQueries from '../queries/project.queries';
 import { AgentSettings } from '../types/agent-settings';
 import { DEFAULT_MAX_AUTO_PRS_PER_RUN } from '../types/context-recommendation';
 import { logger } from '../utils/logger';
+import { extractConfiguredRepos } from '../utils/nao-config';
 import { agentService } from './agent';
 import { autoCreateRecommendationPullRequests, resolveRecommendationRepo } from './context-pr.service';
 import {
@@ -51,8 +52,12 @@ export async function runContextRecommendations(
 
 	try {
 		const project = await projectQueries.getProjectById(projectId);
-		const proposeFixes = !!project?.path && !!(await resolveRecommendationRepo(projectId));
-		const fixCollector = proposeFixes ? createContextFixCollector(project!.path!) : null;
+		const linkedRepos = project?.path ? extractConfiguredRepos(project.path) : [];
+		const contextRepo = await resolveRecommendationRepo(projectId);
+		const proposeFixes = !!project?.path && (!!contextRepo || linkedRepos.some((repo) => repo.repoFullName));
+		const fixCollector = proposeFixes
+			? createContextFixCollector(project!.path!, linkedRepos, { allowContextEdits: !!contextRepo })
+			: null;
 
 		const existing = await crQueries.getActiveRecommendations(projectId);
 		const dismissedFingerprints = await crQueries.getDismissedFingerprints(projectId);
@@ -67,6 +72,8 @@ export async function runContextRecommendations(
 					windowEnd: periodEnd,
 					existing,
 					proposeFixes,
+					linkedRepos,
+					contextRepoConnected: !!contextRepo,
 				}),
 				source: 'contextRecommendations',
 			},
@@ -82,7 +89,11 @@ export async function runContextRecommendations(
 		const agent = await agentService.create({ ...uiChat, id: chat.id, projectId, userId }, model, {
 			excludeFollowUps: true,
 			maxSteps: ANALYSIS_STEP_BUDGET,
-			systemPrompt: renderContextRecommendationsSystemPrompt({ proposeFixes }),
+			systemPrompt: renderContextRecommendationsSystemPrompt({
+				proposeFixes,
+				linkedRepos,
+				contextRepoConnected: !!contextRepo,
+			}),
 			tools: ({ agentSettings }) =>
 				getTools(
 					agentSettings,
