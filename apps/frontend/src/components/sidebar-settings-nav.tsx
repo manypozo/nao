@@ -70,6 +70,13 @@ const settingsNavItems: NavItem[] = [
 		visible: ({ isAdmin }) => isAdmin,
 	},
 	{
+		label: 'Recommendations',
+		to: '/settings/recommendations',
+		visible: ({ isAdmin }) => isAdmin,
+		badge: 'Beta',
+		badgeVariant: 'new',
+	},
+	{
 		label: 'Logs',
 		to: '/settings/logs',
 		visible: ({ isAdmin, isCloud }) => isAdmin && !isCloud,

@@ -217,6 +217,7 @@ jobs:
                         -e "BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}" \
                         -e "ENABLE_USER_SIGNUP=false" \
                         -e "BETA_AUTOMATIONS_ENABLED=true" \
+                        -e "BETA_CONTEXT_RECOMMENDATIONS_ENABLED=true" \
                         -e "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}" \
                         -e "SMTP_HOST=${{ secrets.SMTP_HOST }}" \
                         -e "SMTP_PORT=${{ secrets.SMTP_PORT }}" \
@@ -268,6 +269,7 @@ jobs:
                           -e "ENABLE_USER_LOGIN=true" \
                           -e "ENABLE_USER_SIGNUP=true" \
                           -e "BETA_AUTOMATIONS_ENABLED=true" \
+                          -e "BETA_CONTEXT_RECOMMENDATIONS_ENABLED=true" \
                           getnao/nao:${{ needs.merge.outputs.image-tag }}
 
                       echo "Waiting for container to start..."

@@ -100,6 +100,12 @@ const envSchema = z.object({
 	BETA_AUTOMATIONS_ENABLED: z
 		.enum(['true', 'false'])
 		.optional()
+		.default('true')
+		.transform((val) => val === 'true'),
+
+	BETA_CONTEXT_RECOMMENDATIONS_ENABLED: z
+		.enum(['true', 'false'])
+		.optional()
 		.default('false')
 		.transform((val) => val === 'true'),
 });
