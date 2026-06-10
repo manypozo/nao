@@ -56,8 +56,13 @@ export async function autoCreateRecommendationPullRequests(
 	maxPullRequests: number,
 ): Promise<number> {
 	const open = await crQueries.listRecommendations(projectId, 'open');
+	const contextRepo = await resolveRecommendationRepo(projectId);
 	const candidates = open.filter(
-		(rec) => rec.fixKind === 'patch' && (rec.proposedEdits?.length ?? 0) > 0 && !rec.prUrl,
+		(rec) =>
+			rec.fixKind === 'patch' &&
+			(rec.proposedEdits?.length ?? 0) > 0 &&
+			!rec.prUrl &&
+			canOpenPullRequest(rec.proposedEdits ?? [], contextRepo),
 	);
 
 	let created = 0;
@@ -159,11 +164,21 @@ export async function createRecommendationPullRequest(
 	}
 }
 
+/**
+ * Edits without a linked-repo target are written to the context repository, so they can
+ * only become a pull request when one is connected. Skipping the others up front avoids
+ * a guaranteed failure (and a misleading warning) per context-only recommendation.
+ */
+function canOpenPullRequest(edits: ProposedEdit[], contextRepo: RecommendationRepo | null): boolean {
+	const needsContextRepo = edits.some((edit) => !edit.targetRepo);
+	return !needsContextRepo || contextRepo !== null;
+}
+
 function resolvePullRequestRepo(projectId: string, edits: ProposedEdit[]): Promise<RecommendationRepo | null> {
 	const targetRepos = new Map<string, string | null>();
 	for (const edit of edits) {
-		if (edit.targetRepoFullName) {
-			targetRepos.set(edit.targetRepoFullName, edit.targetRepoBranch ?? null);
+		if (edit.targetRepo) {
+			targetRepos.set(edit.targetRepo.repoFullName, edit.targetRepo.branch);
 		}
 	}
 
@@ -173,7 +188,7 @@ function resolvePullRequestRepo(projectId: string, edits: ProposedEdit[]): Promi
 	if (targetRepos.size > 1) {
 		throw new Error('A recommendation cannot open one pull request across multiple repositories.');
 	}
-	if (edits.some((edit) => !edit.targetRepoFullName)) {
+	if (edits.some((edit) => !edit.targetRepo)) {
 		throw new Error('A recommendation cannot mix context repository edits with linked repository edits.');
 	}
 
@@ -183,7 +198,7 @@ function resolvePullRequestRepo(projectId: string, edits: ProposedEdit[]): Promi
 
 function filterPullRequestEdits(edits: ProposedEdit[]): ProposedEdit[] {
 	return edits.filter((edit) => {
-		if (edit.targetRepoFullName && edit.targetPath) {
+		if (edit.targetRepo) {
 			return true;
 		}
 		return isHumanWritableContextPath(edit.path);
@@ -193,7 +208,7 @@ function filterPullRequestEdits(edits: ProposedEdit[]): ProposedEdit[] {
 function applyEdits(dir: string, edits: ProposedEdit[]): void {
 	const root = fs.realpathSync(dir);
 	for (const edit of edits) {
-		const editPath = edit.targetPath ?? edit.path;
+		const editPath = edit.targetRepo?.path ?? edit.path;
 		const target = path.resolve(root, editPath);
 		assertInsideRepository(root, target, editPath);
 		assertNoSymlinkInPath(root, target, editPath);
@@ -260,8 +275,8 @@ function commitMessage(rec: DBContextRecommendation): string {
 function prBody(rec: DBContextRecommendation, edits: ProposedEdit[]): string {
 	const files = edits
 		.map((edit) => {
-			if (edit.targetRepoFullName && edit.targetPath) {
-				return `- \`${edit.targetRepoFullName}:${edit.targetPath}\` (from \`${edit.path}\`)`;
+			if (edit.targetRepo) {
+				return `- \`${edit.targetRepo.repoFullName}:${edit.targetRepo.path}\` (from \`${edit.path}\`)`;
 			}
 			return `- \`${edit.path}\``;
 		})

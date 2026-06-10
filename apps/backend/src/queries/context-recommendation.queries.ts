@@ -7,11 +7,8 @@ import s, {
 	NewContextRecommendation,
 	NewContextRecommendationConfig,
 } from '../db/abstractSchema';
-import { db } from '../db/db';
+import { db, type DBExecutor } from '../db/db';
 import { WindowTotals } from '../types/context-recommendation';
-
-/** A db handle or an open transaction, so writes can be composed atomically. */
-export type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const ACTIVE_STATUSES = ['open', 'acknowledged', 'snoozed'] as const;
 
@@ -75,7 +72,7 @@ export async function createRun(input: {
 	return run;
 }
 
-export async function setRunChat(runId: string, chatId: string, executor: Executor = db): Promise<void> {
+export async function setRunChat(runId: string, chatId: string, executor: DBExecutor = db): Promise<void> {
 	await executor
 		.update(s.contextRecommendationRun)
 		.set({ chatId })
@@ -92,7 +89,7 @@ export async function completeRun(
 		llmProvider?: DBContextRecommendationRun['llmProvider'];
 		llmModelId?: string;
 	} = {},
-	executor: Executor = db,
+	executor: DBExecutor = db,
 ): Promise<void> {
 	await executor
 		.update(s.contextRecommendationRun)
@@ -133,7 +130,7 @@ export async function getDismissedFingerprints(projectId: string): Promise<strin
 
 export async function insertRecommendation(
 	value: NewContextRecommendation,
-	executor: Executor = db,
+	executor: DBExecutor = db,
 ): Promise<DBContextRecommendation> {
 	const [rec] = await executor.insert(s.contextRecommendation).values(value).returning().execute();
 	return rec;
@@ -142,7 +139,7 @@ export async function insertRecommendation(
 export async function updateRecommendation(
 	id: string,
 	patch: Partial<NewContextRecommendation>,
-	executor: Executor = db,
+	executor: DBExecutor = db,
 ): Promise<void> {
 	await executor
 		.update(s.contextRecommendation)
@@ -219,47 +216,49 @@ export async function setRecommendationStatus(input: {
 
 /** Total friction signals (errors, downvotes, regenerations) for a project over a window. */
 export async function getWindowTotals(projectId: string, start: Date, end: Date): Promise<WindowTotals> {
-	const [errors] = await db
-		.select({ n: sql<number>`count(*)` })
-		.from(s.messagePart)
-		.innerJoin(s.chatMessage, eq(s.chatMessage.id, s.messagePart.messageId))
-		.innerJoin(s.chat, eq(s.chat.id, s.chatMessage.chatId))
-		.where(
-			and(
-				eq(s.chat.projectId, projectId),
-				eq(s.messagePart.toolState, 'output-error'),
-				gte(s.messagePart.createdAt, start),
-				lt(s.messagePart.createdAt, end),
-			),
-		)
-		.execute();
-	const [downvotes] = await db
-		.select({ n: sql<number>`count(*)` })
-		.from(s.messageFeedback)
-		.innerJoin(s.chatMessage, eq(s.chatMessage.id, s.messageFeedback.messageId))
-		.innerJoin(s.chat, eq(s.chat.id, s.chatMessage.chatId))
-		.where(
-			and(
-				eq(s.chat.projectId, projectId),
-				eq(s.messageFeedback.vote, 'down'),
-				gte(s.messageFeedback.createdAt, start),
-				lt(s.messageFeedback.createdAt, end),
-			),
-		)
-		.execute();
-	const [regenerations] = await db
-		.select({ n: sql<number>`count(*)` })
-		.from(s.chatMessage)
-		.innerJoin(s.chat, eq(s.chat.id, s.chatMessage.chatId))
-		.where(
-			and(
-				eq(s.chat.projectId, projectId),
-				isNotNull(s.chatMessage.supersededAt),
-				gte(s.chatMessage.createdAt, start),
-				lt(s.chatMessage.createdAt, end),
-			),
-		)
-		.execute();
+	const [[errors], [downvotes], [regenerations]] = await Promise.all([
+		db
+			.select({ n: sql<number>`count(*)` })
+			.from(s.messagePart)
+			.innerJoin(s.chatMessage, eq(s.chatMessage.id, s.messagePart.messageId))
+			.innerJoin(s.chat, eq(s.chat.id, s.chatMessage.chatId))
+			.where(
+				and(
+					eq(s.chat.projectId, projectId),
+					eq(s.messagePart.toolState, 'output-error'),
+					gte(s.messagePart.createdAt, start),
+					lt(s.messagePart.createdAt, end),
+				),
+			)
+			.execute(),
+		db
+			.select({ n: sql<number>`count(*)` })
+			.from(s.messageFeedback)
+			.innerJoin(s.chatMessage, eq(s.chatMessage.id, s.messageFeedback.messageId))
+			.innerJoin(s.chat, eq(s.chat.id, s.chatMessage.chatId))
+			.where(
+				and(
+					eq(s.chat.projectId, projectId),
+					eq(s.messageFeedback.vote, 'down'),
+					gte(s.messageFeedback.createdAt, start),
+					lt(s.messageFeedback.createdAt, end),
+				),
+			)
+			.execute(),
+		db
+			.select({ n: sql<number>`count(*)` })
+			.from(s.chatMessage)
+			.innerJoin(s.chat, eq(s.chat.id, s.chatMessage.chatId))
+			.where(
+				and(
+					eq(s.chat.projectId, projectId),
+					isNotNull(s.chatMessage.supersededAt),
+					gte(s.chatMessage.createdAt, start),
+					lt(s.chatMessage.createdAt, end),
+				),
+			)
+			.execute(),
+	]);
 	return {
 		errors: Number(errors?.n ?? 0),
 		downvotes: Number(downvotes?.n ?? 0),

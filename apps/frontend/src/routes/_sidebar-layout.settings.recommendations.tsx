@@ -150,13 +150,19 @@ function RecommendationsPage() {
 			return;
 		}
 
-		setCustomSystemPromptInstructions('');
 		if (!savedCustomSystemPromptInstructions.trim()) {
+			setCustomSystemPromptInstructions('');
 			return;
 		}
 
-		await setConfig.mutateAsync({ customSystemPromptInstructions: '' });
-		queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.getConfig.queryKey() });
+		try {
+			await setConfig.mutateAsync({ customSystemPromptInstructions: '' });
+			setCustomSystemPromptInstructions('');
+			queryClient.invalidateQueries({ queryKey: trpc.contextRecommendation.getConfig.queryKey() });
+		} catch {
+			// Keep the saved instructions and re-open the section so nothing is lost on a failed save.
+			setCustomSystemPromptInstructionsEnabled(true);
+		}
 	};
 
 	const changeStatus = async (id: string, status: 'acknowledged' | 'snoozed' | 'applied' | 'dismissed') => {

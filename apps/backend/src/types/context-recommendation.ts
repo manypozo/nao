@@ -1,5 +1,3 @@
-import type { LlmProvider } from '@nao/shared/types';
-
 export const CONTEXT_RECOMMENDATION_RUN_STATUSES = ['running', 'completed', 'failed'] as const;
 export type ContextRecommendationRunStatus = (typeof CONTEXT_RECOMMENDATION_RUN_STATUSES)[number];
 
@@ -57,14 +55,19 @@ export interface RecommendationImpact {
 export const CONTEXT_RECOMMENDATION_FIX_KINDS = ['patch', 'manual'] as const;
 export type ContextRecommendationFixKind = (typeof CONTEXT_RECOMMENDATION_FIX_KINDS)[number];
 
+/** Set when an edit targets a linked GitHub repo instead of the context repo. */
+export interface ProposedEditTargetRepo {
+	repoFullName: string;
+	branch: string | null;
+	path: string;
+}
+
 export interface ProposedEdit {
 	path: string;
 	kind: 'edit' | 'create';
 	oldContent: string;
 	newContent: string;
-	targetRepoFullName?: string;
-	targetRepoBranch?: string | null;
-	targetPath?: string;
+	targetRepo?: ProposedEditTargetRepo;
 }
 
 export interface WindowTotals {
@@ -80,14 +83,4 @@ export interface LinkedContextRepo {
 	branch: string | null;
 	localPath: string | null;
 	repoFullName: string | null;
-}
-
-export interface ContextRecommendationConfig {
-	modelProvider?: LlmProvider | null;
-	modelId?: string | null;
-	frequency?: ContextRecommendationFrequency | null;
-	customSystemPromptInstructions?: string | null;
-	repoFullName?: string | null;
-	autoCreatePrs?: boolean | null;
-	maxAutoPrsPerRun?: number | null;
 }

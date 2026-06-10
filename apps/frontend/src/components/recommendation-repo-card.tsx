@@ -78,7 +78,7 @@ export function RecommendationRepoCard() {
 		return null;
 	}
 
-	if (available.isLoading || status.isLoading || repo.isLoading || linkedRepos.isLoading) {
+	if (available.isLoading || status.isLoading || repo.isLoading) {
 		return (
 			<SettingsCard title='Repository' icon={<Github className='size-4' />}>
 				<Skeleton className='h-4 w-48' />

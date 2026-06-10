@@ -2,9 +2,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { extractConfiguredRepos } from '../src/utils/nao-config';
+
+vi.mock('../src/utils/logger', () => ({
+	logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+}));
 
 describe('extractConfiguredRepos', () => {
 	it('returns repos declared in nao_config.yaml with GitHub metadata', () => {

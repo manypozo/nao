@@ -1,6 +1,6 @@
 import { LlmSelectedModel } from '@nao/shared/types';
 import { readUIMessageStream, UIMessage } from 'ai';
-import { and, desc, eq, isNotNull } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 
 import { getTools } from '../agents/tools';
 import { ContextFixCollector, createContextFixCollector } from '../agents/tools/propose-context-fix';
@@ -12,7 +12,7 @@ import s, {
 	DBContextRecommendationConfig,
 	NewContextRecommendation,
 } from '../db/abstractSchema';
-import { db } from '../db/db';
+import { db, type DBExecutor } from '../db/db';
 import * as chatQueries from '../queries/chat.queries';
 import * as crQueries from '../queries/context-recommendation.queries';
 import * as projectQueries from '../queries/project.queries';
@@ -154,18 +154,6 @@ export async function runContextRecommendations(
 	}
 }
 
-/** Fan out one run per project that has a folder configured. */
-export async function runContextRecommendationsForAllProjects(): Promise<void> {
-	const projects = await db.select({ id: s.project.id }).from(s.project).where(isNotNull(s.project.path)).execute();
-	for (const { id } of projects) {
-		try {
-			await runContextRecommendations(id);
-		} catch (err) {
-			logger.error(`Context recommendations failed for project ${id}: ${String(err)}`, { source: 'agent' });
-		}
-	}
-}
-
 function resolveConfiguredModel(config: DBContextRecommendationConfig | null): LlmSelectedModel | undefined {
 	if (config?.modelProvider && config?.modelId) {
 		return { provider: config.modelProvider, modelId: config.modelId };
@@ -232,48 +220,26 @@ async function applyActions(
 		existing: DBContextRecommendation[];
 		fixCollector: ContextFixCollector | null;
 	},
-	executor: crQueries.Executor,
+	executor: DBExecutor,
 ): Promise<void> {
 	const byId = new Map(args.existing.map((r) => [r.id, r]));
 	for (const action of args.actions) {
 		if (action.kind === 'insert') {
-			const fix = resolveFix(args.fixCollector, action.finding.suggestedFile, action.finding.subjectKey);
 			await crQueries.insertRecommendation(
 				{
 					projectId: args.projectId,
-					runId: args.runId,
 					fingerprint: action.fingerprint,
 					suggestedFile: action.finding.suggestedFile,
 					subjectKey: action.finding.subjectKey,
-					severity: action.finding.severity,
-					impactScore: action.impactScore,
-					impact: action.impact,
-					insights: action.finding.insights,
-					title: action.finding.title,
-					summary: action.finding.summary,
-					suggestedAction: action.finding.suggestedAction,
-					...fix,
-					llmProvider: args.model.provider,
-					llmModelId: args.model.modelId,
+					...upsertFields(action, args),
 				},
 				executor,
 			);
 		} else if (action.kind === 'update') {
 			const prev = byId.get(action.id);
-			const fix = resolveFix(args.fixCollector, action.finding.suggestedFile, action.finding.subjectKey);
 			const patch: Partial<NewContextRecommendation> = {
-				runId: args.runId,
-				severity: action.finding.severity,
-				impactScore: action.impactScore,
-				impact: action.impact,
-				insights: action.finding.insights,
-				title: action.finding.title,
-				summary: action.finding.summary,
-				suggestedAction: action.finding.suggestedAction,
+				...upsertFields(action, args),
 				occurrenceCount: (prev?.occurrenceCount ?? 1) + 1,
-				...fix,
-				llmProvider: args.model.provider,
-				llmModelId: args.model.modelId,
 			};
 			if (action.reopen) {
 				patch.status = 'open';
@@ -287,4 +253,24 @@ async function applyActions(
 			);
 		}
 	}
+}
+
+/** Fields written identically whether a finding is inserted or updated. */
+function upsertFields(
+	action: Extract<ReconcileAction, { kind: 'insert' | 'update' }>,
+	args: { runId: string; model: LlmSelectedModel; fixCollector: ContextFixCollector | null },
+) {
+	return {
+		runId: args.runId,
+		severity: action.finding.severity,
+		impactScore: action.impactScore,
+		impact: action.impact,
+		insights: action.finding.insights,
+		title: action.finding.title,
+		summary: action.finding.summary,
+		suggestedAction: action.finding.suggestedAction,
+		...resolveFix(args.fixCollector, action.finding.suggestedFile, action.finding.subjectKey),
+		llmProvider: args.model.provider,
+		llmModelId: args.model.modelId,
+	};
 }

@@ -33,6 +33,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useSidePanel } from '@/contexts/side-panel';
 import { useRecommendationCollapsed } from '@/hooks/use-recommendation-collapsed';
 import { computeLineDiff } from '@/lib/line-diff';
+import { SEVERITY_BADGE_VARIANT } from '@/lib/recommendation-severity';
 import { cn } from '@/lib/utils';
 import { trpc } from '@/main';
 
@@ -40,7 +41,6 @@ type RouterOutputs = inferRouterOutputs<TrpcRouter>;
 type Recommendation = RouterOutputs['contextRecommendation']['list'][number];
 type RecommendationStatus = 'acknowledged' | 'snoozed' | 'applied' | 'dismissed';
 
-const SEVERITY_VARIANT = { high: 'destructive', medium: 'default', low: 'secondary' } as const;
 const STATUS_LABEL = {
 	open: 'Open',
 	acknowledged: 'Acknowledged',
@@ -125,7 +125,7 @@ export function RecommendationCard({
 								!collapsed && 'rotate-90',
 							)}
 						/>
-						<Badge variant={SEVERITY_VARIANT[rec.severity]}>{rec.severity}</Badge>
+						<Badge variant={SEVERITY_BADGE_VARIANT[rec.severity]}>{rec.severity}</Badge>
 						{!collapsed && <Badge variant='outline'>{STATUS_LABEL[rec.status]}</Badge>}
 						{collapsed && rec.prUrl && <PrStatusBadge state={prStatus.data?.state} />}
 						{collapsed && diffTotals && (

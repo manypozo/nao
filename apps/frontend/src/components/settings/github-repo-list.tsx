@@ -8,6 +8,7 @@ import type { TrpcRouter } from '@nao/backend/trpc';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
+import { formatRelativeDate } from '@/lib/time-ago';
 import { trpc } from '@/main';
 
 export type GithubRepo = inferRouterOutputs<TrpcRouter>['github']['listRepos']['repos'][number];
@@ -84,7 +85,7 @@ export function GithubRepoList({ selected, onSelect, onSearchChange, renderRepoM
 									</div>
 								)}
 								<div className='text-xs text-muted-foreground mt-1'>
-									Updated {formatRelativeDate(repo.updated_at)}
+									Updated {formatRelativeDate(new Date(repo.updated_at))}
 								</div>
 								{renderRepoMeta?.(repo)}
 							</div>
@@ -111,26 +112,4 @@ export function GithubRepoList({ selected, onSelect, onSearchChange, renderRepoM
 			)}
 		</>
 	);
-}
-
-function formatRelativeDate(dateStr: string): string {
-	const date = new Date(dateStr);
-	const now = new Date();
-	const diffMs = now.getTime() - date.getTime();
-	const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-	if (diffDays === 0) {
-		return 'today';
-	}
-	if (diffDays === 1) {
-		return 'yesterday';
-	}
-	if (diffDays < 30) {
-		return `${diffDays} days ago`;
-	}
-	if (diffDays < 365) {
-		const months = Math.floor(diffDays / 30);
-		return `${months} month${months > 1 ? 's' : ''} ago`;
-	}
-	return date.toLocaleDateString();
 }

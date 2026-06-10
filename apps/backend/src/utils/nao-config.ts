@@ -3,16 +3,10 @@ import path from 'node:path';
 
 import yaml from 'js-yaml';
 
-const ENV_PATTERN = /\$?\{\{\s*env\(['"]([^'"]+)['"]\)\s*\}\}/g;
+import type { LinkedContextRepo } from '../types/context-recommendation';
+import { logger } from './logger';
 
-export interface NaoConfigRepo {
-	name: string;
-	contextPath: string;
-	url: string | null;
-	branch: string | null;
-	localPath: string | null;
-	repoFullName: string | null;
-}
+const ENV_PATTERN = /\$?\{\{\s*env\(['"]([^'"]+)['"]\)\s*\}\}/g;
 
 export function extractRequiredEnvVars(projectFolder: string): string[] {
 	const configPath = path.join(projectFolder, 'nao_config.yaml');
@@ -30,7 +24,7 @@ export function extractRequiredEnvVars(projectFolder: string): string[] {
 	return [...vars];
 }
 
-export function extractConfiguredRepos(projectFolder: string): NaoConfigRepo[] {
+export function extractConfiguredRepos(projectFolder: string): LinkedContextRepo[] {
 	const configPath = path.join(projectFolder, 'nao_config.yaml');
 	if (!fs.existsSync(configPath)) {
 		return [];
@@ -67,7 +61,10 @@ export function extractConfiguredRepos(projectFolder: string): NaoConfigRepo[] {
 function loadConfig(configPath: string): unknown {
 	try {
 		return yaml.load(fs.readFileSync(configPath, 'utf-8'));
-	} catch {
+	} catch (err) {
+		logger.warn(`Failed to read or parse ${configPath}: ${err instanceof Error ? err.message : String(err)}`, {
+			source: 'system',
+		});
 		return null;
 	}
 }

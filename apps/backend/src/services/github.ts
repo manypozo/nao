@@ -176,9 +176,17 @@ async function searchRepos(
 	};
 }
 
+function authenticatedRepoUrl(token: string, repoFullName: string): string {
+	return `https://x-access-token:${token}@github.com/${repoFullName}.git`;
+}
+
+function publicRepoUrl(repoFullName: string): string {
+	return `https://github.com/${repoFullName}.git`;
+}
+
 export function cloneRepo(token: string, fullName: string, targetDir: string): void {
-	const cloneUrl = `https://x-access-token:${token}@github.com/${fullName}.git`;
-	const cleanUrl = `https://github.com/${fullName}.git`;
+	const cloneUrl = authenticatedRepoUrl(token, fullName);
+	const cleanUrl = publicRepoUrl(fullName);
 	execFileSync('git', ['clone', '--depth', '1', cloneUrl, targetDir], {
 		timeout: 120_000,
 		stdio: 'pipe',
@@ -243,8 +251,7 @@ export function removeOriginRemote(projectDir: string): void {
 export function pullRepo(token: string, repoFullName: string, projectDir: string): string {
 	const opts = { cwd: projectDir, stdio: 'pipe' as const, timeout: 120_000 };
 
-	const authenticatedUrl = `https://x-access-token:${token}@github.com/${repoFullName}.git`;
-	execFileSync('git', ['remote', 'set-url', 'origin', authenticatedUrl], opts);
+	execFileSync('git', ['remote', 'set-url', 'origin', authenticatedRepoUrl(token, repoFullName)], opts);
 
 	try {
 		execFileSync('git', ['fetch', '--depth', '1', 'origin'], opts);
@@ -254,8 +261,7 @@ export function pullRepo(token: string, repoFullName: string, projectDir: string
 			.trim();
 		return output;
 	} finally {
-		const cleanUrl = `https://github.com/${repoFullName}.git`;
-		execFileSync('git', ['remote', 'set-url', 'origin', cleanUrl], { ...opts, timeout: 5_000 });
+		execFileSync('git', ['remote', 'set-url', 'origin', publicRepoUrl(repoFullName)], { ...opts, timeout: 5_000 });
 	}
 }
 
@@ -304,8 +310,7 @@ export function commitAllAndPushBranch(args: {
 		env: { ...process.env, ...identity },
 	});
 
-	const authenticatedUrl = `https://x-access-token:${token}@github.com/${repoFullName}.git`;
-	execFileSync('git', ['push', authenticatedUrl, `HEAD:refs/heads/${branch}`], opts);
+	execFileSync('git', ['push', authenticatedRepoUrl(token, repoFullName), `HEAD:refs/heads/${branch}`], opts);
 }
 
 function withCoAuthors(message: string, coAuthors: GitIdentity[]): string {
