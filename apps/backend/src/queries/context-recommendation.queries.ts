@@ -29,6 +29,20 @@ export async function getConfig(projectId: string): Promise<DBContextRecommendat
 	return config ?? null;
 }
 
+export async function listProjectRecommendationScheduleConfigs(): Promise<
+	{ projectId: string; frequency: DBContextRecommendationConfig['frequency'] }[]
+> {
+	return db
+		.select({
+			projectId: s.project.id,
+			frequency: s.contextRecommendationConfig.frequency,
+		})
+		.from(s.project)
+		.leftJoin(s.contextRecommendationConfig, eq(s.contextRecommendationConfig.projectId, s.project.id))
+		.where(isNotNull(s.project.path))
+		.execute();
+}
+
 export async function updateConfig(
 	projectId: string,
 	patch: ContextRecommendationConfigPatch,

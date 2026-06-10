@@ -78,7 +78,7 @@ export const contextRecommendationRoutes = {
 				maxAutoPrsPerRun: input.maxAutoPrsPerRun,
 			});
 			if (input.frequency) {
-				await ensureContextRecommendationsSchedule(input.frequency, { reset: true });
+				await ensureContextRecommendationsSchedule(ctx.project.id, input.frequency, { reset: true });
 			}
 		}),
 

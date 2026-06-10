@@ -14,15 +14,13 @@ import { AUTOMATION_JOB_NAME, automationHandler } from './handlers/automation.ha
 import {
 	CONTEXT_RECOMMENDATIONS_JOB_NAME,
 	contextRecommendationsHandler,
-	ensureContextRecommendationsSchedule,
+	ensureContextRecommendationsSchedules,
 } from './handlers/context-recommendations.handler';
 import { LOG_CLEANUP_JOB_NAME, logCleanupHandler, runLogCleanup } from './handlers/log-cleanup.handler';
 import { MCP_QUERY_DATA_CLEANUP_JOB_NAME, mcpQueryDataCleanupHandler } from './handlers/mcp-query-data-cleanup.handler';
 import { STORY_REFRESH_JOB_NAME, storyRefreshHandler } from './handlers/story-refresh.handler';
 import { mcpServerRoutes } from './mcp/routes';
-import * as crQueries from './queries/context-recommendation.queries';
 import { ensureOrganizationSetup } from './queries/organization.queries';
-import { getDefaultProject } from './queries/project.queries';
 import { agentRoutes } from './routes/agent';
 import { authRoutes } from './routes/auth';
 import { authErrorRedirectRoutes } from './routes/auth-error-redirect';
@@ -45,7 +43,6 @@ import { ensureRecurring, registerJob, startScheduler } from './services/schedul
 import { slackService } from './services/slack';
 import { TrpcRouter, trpcRouter } from './trpc/router';
 import { createContext } from './trpc/trpc';
-import { DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY } from './types/context-recommendation';
 import { BudgetExceededError, HandlerError } from './utils/error';
 import { logger } from './utils/logger';
 
@@ -330,18 +327,14 @@ export const startServer = async (opts: { port: number; host: string }) => {
 
 	if (env.BETA_CONTEXT_RECOMMENDATIONS_ENABLED) {
 		registerJob(CONTEXT_RECOMMENDATIONS_JOB_NAME, contextRecommendationsHandler);
-		let frequency = DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY;
 		try {
-			const defaultProject = await getDefaultProject();
-			const recommendationsSettings = defaultProject ? await crQueries.getConfig(defaultProject.id) : null;
-			frequency = recommendationsSettings?.frequency ?? DEFAULT_CONTEXT_RECOMMENDATION_FREQUENCY;
+			await ensureContextRecommendationsSchedules();
 		} catch (err) {
 			logger.error(
-				`Failed to load context recommendations settings, falling back to default frequency: ${err instanceof Error ? err.message : String(err)}`,
+				`Failed to register context recommendations schedules: ${err instanceof Error ? err.message : String(err)}`,
 				{ source: 'system' },
 			);
 		}
-		await ensureContextRecommendationsSchedule(frequency);
 	}
 
 	startScheduler();
