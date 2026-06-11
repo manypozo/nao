@@ -19,7 +19,7 @@ env:
     CACHE_REGISTRY: ghcr.io
     CACHE_IMAGE: ${{ github.repository }}/build-cache
     CLOUD_CONTAINER_NAME: nao-cloud
-    CLOUD_DOMAIN: app.preview.getnao.io
+    CLOUD_DOMAIN: app.getnao.io
     CLOUD_PORT: 5050
 
 jobs:
@@ -274,9 +274,5 @@ jobs:
 
                       echo "Waiting for container to start..."
                       sleep 10
-
-                      # Configure nginx for app.preview.getnao.io
-                      echo "\"~^app\" ${{ env.CLOUD_PORT }};" > "/home/github-actions-demo/nginx/preview.d/app.conf"
-                      docker exec nginx nginx -s reload
 
                       echo "Deployed at https://${{ env.CLOUD_DOMAIN }}"
